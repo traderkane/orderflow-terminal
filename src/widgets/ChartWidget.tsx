@@ -298,8 +298,9 @@ export function ChartWidget() {
     const frames = heatmapRef.current;
     if (!frames.length) return;
 
-    const recent = frames.slice(-120);
+    const recent = frames.slice(-180);
     const timeScale = chart.timeScale();
+    const plotW = Math.max(1, timeScale.width() || w);
 
     const xMapped: Array<number | null> = recent.map((f) =>
       timeScale.timeToCoordinate(Math.floor(frameTimeSec(f.time)) as Time),
@@ -307,24 +308,33 @@ export function ChartWidget() {
     const validXs = xMapped.filter((x): x is number => x != null && Number.isFinite(x));
     let useStretch = validXs.length < 2;
     let x0 = 0;
-    let x1 = w;
+    let x1 = plotW;
     if (!useStretch) {
       x0 = Math.min(...validXs);
       x1 = Math.max(...validXs);
-      if (x1 - x0 < w * 0.22) useStretch = true;
+      // Heatmap frames are ~5 Hz — clock span collapses vs candle width.
+      // Stretch across most of the plot when the mapped band is thin.
+      if (x1 - x0 < plotW * 0.42) useStretch = true;
     }
 
-    let peak = 0;
+    // Soft peak (p95) keeps walls bright without crushing mid liquidity.
+    const samples: number[] = [];
     for (const frame of recent) {
       const n = frame.prices.length;
       for (let y = 0; y < n; y++) {
-        peak = Math.max(peak, frame.bids[y] ?? 0, frame.asks[y] ?? 0);
+        const v = Math.max(frame.bids[y] ?? 0, frame.asks[y] ?? 0);
+        if (v > 0.001) samples.push(v);
       }
     }
+    samples.sort((a, b) => a - b);
+    const peak =
+      samples.length > 0
+        ? samples[Math.min(samples.length - 1, Math.floor(samples.length * 0.95))]
+        : 1;
     const invPeak = peak > 0 ? 1 / peak : 1;
 
-    const stretchLeft = w * 0.28;
-    const stretchRight = w - 8;
+    const stretchLeft = Math.max(8, plotW * 0.12);
+    const stretchRight = plotW - 6;
     const stretchSpan = Math.max(1, stretchRight - stretchLeft);
 
     for (let i = 0; i < recent.length; i++) {
@@ -333,8 +343,12 @@ export function ChartWidget() {
       let xRight: number;
 
       if (useStretch) {
-        xLeft = stretchLeft + (i / recent.length) * stretchSpan;
-        xRight = stretchLeft + ((i + 1) / recent.length) * stretchSpan;
+        // Ease columns so recent frames occupy more horizontal room (MMT trail).
+        const t0 = i / recent.length;
+        const t1 = (i + 1) / recent.length;
+        const ease = (t: number) => t * t * (3 - 2 * t);
+        xLeft = stretchLeft + ease(t0) * stretchSpan;
+        xRight = stretchLeft + ease(t1) * stretchSpan;
       } else {
         const x = xMapped[i];
         if (x == null || !Number.isFinite(x)) continue;
@@ -342,40 +356,59 @@ export function ChartWidget() {
         const next = i + 1 < xMapped.length ? xMapped[i + 1] : null;
         const leftGap =
           prev != null && Number.isFinite(prev)
-            ? (x - prev) / 2
+            ? Math.max(1.2, (x - prev) / 2)
             : Math.max(2, (x1 - x0) / recent.length / 2);
         const rightGap =
           next != null && Number.isFinite(next)
-            ? (next - x) / 2
+            ? Math.max(1.2, (next - x) / 2)
             : Math.max(2, (x1 - x0) / recent.length / 2);
         xLeft = x - leftGap;
         xRight = x + rightGap;
       }
 
+      // Slight overlap smooths temporal seams without a single hard band.
+      const pad = Math.min(1.25, Math.max(0.35, (xRight - xLeft) * 0.15));
+      xLeft -= pad;
+      xRight += pad;
+
       const cellW = Math.max(1, xRight - xLeft);
       const levels = frame.prices.length;
       if (levels < 2) continue;
 
+      // Precompute y coords once per frame for vertical interpolation.
+      const yCoords: Array<number | null> = new Array(levels);
+      for (let y = 0; y < levels; y++) {
+        const yc = series.priceToCoordinate(frame.prices[y]);
+        yCoords[y] = yc != null && Number.isFinite(yc) ? yc : null;
+      }
+
       for (let y = 0; y < levels; y++) {
         const bid = frame.bids[y] ?? 0;
         const ask = frame.asks[y] ?? 0;
-        const raw = Math.max(bid, ask) * invPeak;
-        if (raw < 0.03) continue;
-        const intensity = Math.min(1, Math.pow(raw, 0.55));
-        const price = frame.prices[y];
-        const yCoord = series.priceToCoordinate(price);
-        if (yCoord == null || !Number.isFinite(yCoord)) continue;
+        // Blend neighbors for smoother book walls (less single-row look).
+        const bidN =
+          bid * 0.55 +
+          (frame.bids[y - 1] ?? bid) * 0.225 +
+          (frame.bids[y + 1] ?? bid) * 0.225;
+        const askN =
+          ask * 0.55 +
+          (frame.asks[y - 1] ?? ask) * 0.225 +
+          (frame.asks[y + 1] ?? ask) * 0.225;
+        const rawBid = Math.min(1.35, bidN * invPeak);
+        const rawAsk = Math.min(1.35, askN * invPeak);
+        if (rawBid < 0.018 && rawAsk < 0.018) continue;
+
+        const yCoord = yCoords[y];
+        if (yCoord == null) continue;
 
         let yTop: number;
         let yBot: number;
-        if (y + 1 < levels) {
-          const yNext = series.priceToCoordinate(frame.prices[y + 1]);
-          if (yNext == null) continue;
+        const yNext = y + 1 < levels ? yCoords[y + 1] : null;
+        const yPrev = y > 0 ? yCoords[y - 1] : null;
+        if (yNext != null) {
           yTop = Math.min(yCoord, yNext);
           yBot = Math.max(yCoord, yNext);
-        } else if (y > 0) {
-          const yPrev = series.priceToCoordinate(frame.prices[y - 1]);
-          if (yPrev == null) continue;
+        } else if (yPrev != null) {
           const half = Math.abs(yCoord - yPrev);
           yTop = yCoord - half / 2;
           yBot = yCoord + half / 2;
@@ -384,17 +417,47 @@ export function ChartWidget() {
         }
 
         const cellH = Math.max(1, yBot - yTop);
-        const isBid = bid >= ask;
-        const alpha = 0.08 + intensity * 0.42;
-        ctx.fillStyle = isBid
-          ? `rgba(14, 203, 129, ${alpha})`
-          : `rgba(246, 70, 93, ${alpha})`;
-        ctx.fillRect(
-          Math.floor(xLeft),
-          Math.floor(yTop),
-          Math.ceil(cellW) + 1,
-          Math.ceil(cellH) + 1,
-        );
+        const bidI = Math.min(1, Math.pow(rawBid, 0.48));
+        const askI = Math.min(1, Math.pow(rawAsk, 0.48));
+
+        // Paint both sides when present — dual-tone walls, not max-only bands.
+        if (bidI >= askI && bidI > 0.02) {
+          const alpha = 0.07 + bidI * 0.52;
+          ctx.fillStyle = `rgba(14, 203, 129, ${alpha})`;
+          ctx.fillRect(
+            Math.floor(xLeft),
+            Math.floor(yTop),
+            Math.ceil(cellW) + 1,
+            Math.ceil(cellH) + 1,
+          );
+          if (askI > 0.08) {
+            ctx.fillStyle = `rgba(246, 70, 93, ${0.04 + askI * 0.22})`;
+            ctx.fillRect(
+              Math.floor(xLeft),
+              Math.floor(yTop),
+              Math.ceil(cellW) + 1,
+              Math.ceil(cellH) + 1,
+            );
+          }
+        } else if (askI > 0.02) {
+          const alpha = 0.07 + askI * 0.52;
+          ctx.fillStyle = `rgba(246, 70, 93, ${alpha})`;
+          ctx.fillRect(
+            Math.floor(xLeft),
+            Math.floor(yTop),
+            Math.ceil(cellW) + 1,
+            Math.ceil(cellH) + 1,
+          );
+          if (bidI > 0.08) {
+            ctx.fillStyle = `rgba(14, 203, 129, ${0.04 + bidI * 0.22})`;
+            ctx.fillRect(
+              Math.floor(xLeft),
+              Math.floor(yTop),
+              Math.ceil(cellW) + 1,
+              Math.ceil(cellH) + 1,
+            );
+          }
+        }
       }
     }
   };
@@ -562,13 +625,15 @@ export function ChartWidget() {
     if (!candles.length) return;
 
     let maxSide = 1;
+    let maxAbsDelta = 1;
     for (const b of bars) {
+      maxAbsDelta = Math.max(maxAbsDelta, Math.abs(b.delta));
       for (const l of b.levels) {
         maxSide = Math.max(maxSide, l.buyVolume, l.sellVolume);
       }
     }
 
-    // Estimate median bar width in px from consecutive visible candles
+    // Median bar gap → align footprint body to candle width.
     const xs: number[] = [];
     for (const c of candles) {
       const x = timeScale.timeToCoordinate(c.time as Time);
@@ -584,10 +649,23 @@ export function ChartWidget() {
       gaps.sort((a, b) => a - b);
       if (gaps.length) barW = gaps[Math.floor(gaps.length / 2)];
     }
-    const half = Math.max(3, barW * 0.42);
-    const showText = barW >= 28;
-    const showCompact = barW >= 18 && !showText;
-    const minCellH = showText ? 8 : 3;
+    // Prefer chart barSpacing when available (tighter candle lock).
+    const spacing = timeScale.options().barSpacing;
+    if (typeof spacing === 'number' && spacing > 2) {
+      barW = Math.max(barW * 0.92, spacing);
+    }
+
+    // Body slightly under full gap so adjacent columns don't collide.
+    const bodyW = Math.max(6, Math.min(barW * 0.9, barW - 1.5));
+    const half = bodyW / 2;
+    // Delta strip on the right when there's room (MMT-style column).
+    const showDeltaCol = bodyW >= 26;
+    const deltaColW = showDeltaCol ? Math.max(3, Math.min(6, bodyW * 0.14)) : 0;
+    const clusterW = bodyW - deltaColW;
+    const showText = bodyW >= 22;
+    const showCompact = bodyW >= 14 && !showText;
+    const fontPx = bodyW >= 36 ? 10 : bodyW >= 28 ? 9 : 8;
+    const minCellH = showText ? 7 : 2.5;
 
     const stepGuess =
       candles[candles.length - 1] && candles[candles.length - 1].close >= 1000
@@ -601,7 +679,6 @@ export function ChartWidget() {
       if (xMid == null || !Number.isFinite(xMid)) continue;
 
       const x0 = (xMid as number) - half;
-      const cellW = half * 2;
       const levels = [...bar.levels].sort((a, b) => b.price - a.price);
 
       // Soft delta-tinted body behind cells
@@ -612,9 +689,9 @@ export function ChartWidget() {
         const bot = Math.max(yHi, yLo);
         const deltaPos = bar.delta >= 0;
         ctx.fillStyle = deltaPos
-          ? 'rgba(14, 203, 129, 0.06)'
-          : 'rgba(246, 70, 93, 0.06)';
-        ctx.fillRect(x0, top, cellW, Math.max(1, bot - top));
+          ? 'rgba(14, 203, 129, 0.07)'
+          : 'rgba(246, 70, 93, 0.07)';
+        ctx.fillRect(x0, top, bodyW, Math.max(1, bot - top));
       }
 
       for (let i = 0; i < levels.length; i++) {
@@ -642,19 +719,26 @@ export function ChartWidget() {
               ? Math.abs(y - yStep)
               : 6;
         }
-        h = Math.max(minCellH, Math.min(h, 28));
+        // Cap less aggressively when zoomed so 1m cells stay readable.
+        const maxH = showText ? 34 : 22;
+        h = Math.max(minCellH, Math.min(h, maxH));
         const yTop = y - h / 2;
 
         const buyA =
-          maxSide > 0 ? 0.12 + (lvl.buyVolume / maxSide) * 0.58 : 0.1;
+          maxSide > 0 ? 0.14 + (lvl.buyVolume / maxSide) * 0.62 : 0.1;
         const sellA =
-          maxSide > 0 ? 0.12 + (lvl.sellVolume / maxSide) * 0.58 : 0.1;
-        const midX = x0 + cellW / 2;
+          maxSide > 0 ? 0.14 + (lvl.sellVolume / maxSide) * 0.62 : 0.1;
+        const midX = x0 + clusterW / 2;
+        const halfCluster = clusterW / 2;
 
         ctx.fillStyle = `rgba(246, 70, 93, ${sellA})`;
-        ctx.fillRect(x0, yTop, cellW / 2 - 0.5, h);
+        ctx.fillRect(x0, yTop, halfCluster - 0.4, h);
         ctx.fillStyle = `rgba(14, 203, 129, ${buyA})`;
-        ctx.fillRect(midX + 0.5, yTop, cellW / 2 - 0.5, h);
+        ctx.fillRect(midX + 0.4, yTop, halfCluster - 0.4, h);
+
+        // Hairline split between sell | buy
+        ctx.fillStyle = 'rgba(10, 12, 16, 0.55)';
+        ctx.fillRect(midX - 0.5, yTop, 1, h);
 
         const imb = footprintCellImbalance(
           lvl.buyVolume,
@@ -662,53 +746,97 @@ export function ChartWidget() {
           maxSide,
         );
         if (imb) {
-          ctx.strokeStyle =
+          const imbColor =
             imb === 'buy'
               ? 'rgba(14, 203, 129, 0.95)'
               : 'rgba(246, 70, 93, 0.95)';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x0 + 0.5, yTop + 0.5, cellW - 1, h - 1);
+          // Stronger imbalance: outer stroke + side accent bar
+          ctx.strokeStyle = imbColor;
+          ctx.lineWidth = h >= 10 ? 1.5 : 1;
+          ctx.strokeRect(x0 + 0.5, yTop + 0.5, clusterW - 1, Math.max(1, h - 1));
+          ctx.fillStyle = imbColor;
+          if (imb === 'buy') {
+            ctx.fillRect(x0 + clusterW - 2.5, yTop + 1, 2, Math.max(1, h - 2));
+          } else {
+            ctx.fillRect(x0 + 0.5, yTop + 1, 2, Math.max(1, h - 2));
+          }
         }
 
-        if (showText && h >= 9) {
-          ctx.font = '600 9px IBM Plex Mono, JetBrains Mono, monospace';
+        // Optional per-level delta column (right of cluster)
+        if (showDeltaCol && deltaColW > 0) {
+          const dNorm = Math.min(1, Math.abs(lvl.delta) / (maxSide * 0.85 || 1));
+          const dA = 0.12 + dNorm * 0.7;
+          ctx.fillStyle =
+            lvl.delta >= 0
+              ? `rgba(14, 203, 129, ${dA})`
+              : `rgba(246, 70, 93, ${dA})`;
+          ctx.fillRect(x0 + clusterW + 0.5, yTop, deltaColW - 0.5, h);
+        }
+
+        if (showText && h >= 8) {
+          const useFont = h >= 12 ? fontPx : Math.max(7, fontPx - 1);
+          ctx.font = `600 ${useFont}px IBM Plex Mono, JetBrains Mono, monospace`;
           ctx.textBaseline = 'middle';
           const sellLabel = formatFootprintVol(lvl.sellVolume);
           const buyLabel = formatFootprintVol(lvl.buyVolume);
+          // Clip labels into half-cells for zoom fidelity
           if (sellLabel) {
-            ctx.fillStyle = 'rgba(252, 165, 165, 0.95)';
+            ctx.fillStyle = imb === 'sell' ? 'rgba(254, 202, 202, 1)' : 'rgba(252, 165, 165, 0.95)';
             ctx.textAlign = 'right';
-            ctx.fillText(sellLabel, midX - 2, y + 0.5);
+            const tw = ctx.measureText(sellLabel).width;
+            if (tw <= halfCluster - 3) {
+              ctx.fillText(sellLabel, midX - 2, y + 0.5);
+            } else if (halfCluster >= 10) {
+              ctx.font = `600 ${Math.max(7, useFont - 1)}px IBM Plex Mono, JetBrains Mono, monospace`;
+              ctx.fillText(sellLabel, midX - 2, y + 0.5);
+            }
           }
           if (buyLabel) {
-            ctx.fillStyle = 'rgba(167, 243, 208, 0.95)';
+            ctx.font = `600 ${useFont}px IBM Plex Mono, JetBrains Mono, monospace`;
+            ctx.fillStyle = imb === 'buy' ? 'rgba(167, 243, 208, 1)' : 'rgba(167, 243, 208, 0.95)';
             ctx.textAlign = 'left';
-            ctx.fillText(buyLabel, midX + 2, y + 0.5);
+            const tw = ctx.measureText(buyLabel).width;
+            if (tw <= halfCluster - 3) {
+              ctx.fillText(buyLabel, midX + 2, y + 0.5);
+            } else if (halfCluster >= 10) {
+              ctx.font = `600 ${Math.max(7, useFont - 1)}px IBM Plex Mono, JetBrains Mono, monospace`;
+              ctx.fillText(buyLabel, midX + 2, y + 0.5);
+            }
           }
-        } else if (showCompact && h >= 5) {
-          // Tiny delta pip when zoomed for 5m/15m density
+        } else if (showCompact && h >= 4) {
           const d = lvl.delta;
-          if (Math.abs(d) > maxSide * 0.08) {
+          if (Math.abs(d) > maxSide * 0.06) {
             ctx.fillStyle =
-              d >= 0 ? 'rgba(14,203,129,0.85)' : 'rgba(246,70,93,0.85)';
-            ctx.fillRect(midX - 1, yTop + 1, 2, Math.max(1, h - 2));
+              d >= 0 ? 'rgba(14,203,129,0.9)' : 'rgba(246,70,93,0.9)';
+            ctx.fillRect(midX - 1, yTop + 0.5, 2, Math.max(1, h - 1));
           }
         }
       }
 
-      // Per-bar delta caption under the low
+      // Per-bar delta caption under the low — stronger chip when zoomed
       if (showText || showCompact) {
         const yLo2 = series.priceToCoordinate(c.low);
         if (yLo2 != null && Number.isFinite(yLo2)) {
-          ctx.font = '600 9px IBM Plex Mono, JetBrains Mono, monospace';
+          const label = `${bar.delta >= 0 ? '+' : ''}${formatFootprintVol(Math.abs(bar.delta)) || '0'}`;
+          ctx.font = `700 ${showText ? fontPx : 8}px IBM Plex Mono, JetBrains Mono, monospace`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'top';
+          const tw = ctx.measureText(label).width;
+          const chipW = tw + 5;
+          const chipH = showText ? 11 : 9;
+          const chipX = (xMid as number) - chipW / 2;
+          const chipY = (yLo2 as number) + 2;
+          const dStrength = Math.min(1, Math.abs(bar.delta) / maxAbsDelta);
           ctx.fillStyle =
             bar.delta >= 0
-              ? 'rgba(14, 203, 129, 0.85)'
-              : 'rgba(246, 70, 93, 0.85)';
-          const label = `${bar.delta >= 0 ? '+' : ''}${formatFootprintVol(Math.abs(bar.delta)) || '0'}`;
-          ctx.fillText(label, xMid as number, (yLo2 as number) + 3);
+              ? `rgba(14, 203, 129, ${0.12 + dStrength * 0.22})`
+              : `rgba(246, 70, 93, ${0.12 + dStrength * 0.22})`;
+          ctx.fillRect(chipX, chipY, chipW, chipH);
+          ctx.fillStyle =
+            bar.delta >= 0
+              ? 'rgba(167, 243, 208, 0.95)'
+              : 'rgba(252, 165, 165, 0.95)';
+          ctx.fillText(label, xMid as number, chipY + 1);
         }
       }
     }
@@ -1522,8 +1650,8 @@ export function ChartWidget() {
       wickDownColor: fp ? 'rgba(246, 70, 93, 0.55)' : DOWN,
     });
     chart.timeScale().applyOptions({
-      barSpacing: fp ? 22 : 8,
-      minBarSpacing: fp ? 6 : 0.5,
+      barSpacing: fp ? 30 : 8,
+      minBarSpacing: fp ? 12 : 0.5,
     });
     scheduleOverlays();
     // eslint-disable-next-line react-hooks/exhaustive-deps

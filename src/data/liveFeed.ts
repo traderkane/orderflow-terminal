@@ -39,8 +39,8 @@ import {
 const MAX_TRADES = 120;
 const MAX_LIQS = 80;
 const MAX_CANDLES = 240;
-const MAX_HEATMAP = 160;
-const HEATMAP_LEVELS = 96;
+const MAX_HEATMAP = 220;
+const HEATMAP_LEVELS = 120;
 const HEATMAP_FRAME_MS = 200;
 const EMIT_MS = 100;
 /** Footprint / TPO stay on 1m buckets regardless of chart TF. */
@@ -657,6 +657,7 @@ export class LiveFeed {
   private pushHeatmapFrame(nowMs: number) {
     const mid = this.book.mid || this.last;
     if (!mid) return;
+    // Prefer uncapped merged depth sides so heatmap uses full book, not top-N DOM.
     const srcBids = this.depthBids.length ? this.depthBids : this.book.bids;
     const srcAsks = this.depthAsks.length ? this.depthAsks : this.book.asks;
     if (!srcBids.length && !srcAsks.length) return;
@@ -666,9 +667,11 @@ export class LiveFeed {
     const bookHalf = Math.max(mid - lowestBid, highestAsk - mid, 0);
     const tick = this.inferTick(srcBids, srcAsks) || Math.max(mid * 1e-6, 0.01);
     const halfLevels = (HEATMAP_LEVELS - 1) / 2;
+    // Fit span to observed depth with a soft pad — avoids collapsing into one band
+    // when depth20 is sparse, while still resolving deeper walls.
     const span = Math.min(
-      mid * 0.02,
-      Math.max(bookHalf * 1.35, tick * halfLevels, tick * 12),
+      mid * 0.025,
+      Math.max(bookHalf * 1.15, tick * Math.min(halfLevels, srcBids.length + srcAsks.length), tick * 16),
     );
 
     const prices: number[] = new Array(HEATMAP_LEVELS);
@@ -686,10 +689,13 @@ export class LiveFeed {
     const deposit = (arr: number[], price: number, size: number) => {
       const idx = bucketIndex(price);
       arr[idx] += size;
-      if (idx > 0) arr[idx - 1] += size * 0.35;
-      if (idx < HEATMAP_LEVELS - 1) arr[idx + 1] += size * 0.35;
-      if (idx > 1) arr[idx - 2] += size * 0.12;
-      if (idx < HEATMAP_LEVELS - 2) arr[idx + 2] += size * 0.12;
+      // Wider soft kernel → multi-row walls instead of a single bright band
+      if (idx > 0) arr[idx - 1] += size * 0.42;
+      if (idx < HEATMAP_LEVELS - 1) arr[idx + 1] += size * 0.42;
+      if (idx > 1) arr[idx - 2] += size * 0.18;
+      if (idx < HEATMAP_LEVELS - 2) arr[idx + 2] += size * 0.18;
+      if (idx > 2) arr[idx - 3] += size * 0.06;
+      if (idx < HEATMAP_LEVELS - 3) arr[idx + 3] += size * 0.06;
     };
 
     for (const b of srcBids) deposit(bidSizes, b.price, b.size);
@@ -697,26 +703,47 @@ export class LiveFeed {
 
     let maxBid = 0;
     let maxAsk = 0;
+    const bidVals: number[] = [];
+    const askVals: number[] = [];
     for (let i = 0; i < HEATMAP_LEVELS; i++) {
       maxBid = Math.max(maxBid, bidSizes[i]);
       maxAsk = Math.max(maxAsk, askSizes[i]);
+      if (bidSizes[i] > 0) bidVals.push(bidSizes[i]);
+      if (askSizes[i] > 0) askVals.push(askSizes[i]);
     }
-    const norm = (v: number, max: number) =>
-      max > 0 ? Math.log1p(v) / Math.log1p(max) : 0;
+    bidVals.sort((a, b) => a - b);
+    askVals.sort((a, b) => a - b);
+    // Normalize against p90 so mid-depth stays visible beside walls.
+    const p90 = (arr: number[], fallback: number) =>
+      arr.length
+        ? arr[Math.min(arr.length - 1, Math.floor(arr.length * 0.9))]
+        : fallback;
+    const bidRef = Math.max(p90(bidVals, maxBid), maxBid * 0.55, 1e-9);
+    const askRef = Math.max(p90(askVals, maxAsk), maxAsk * 0.55, 1e-9);
+    const norm = (v: number, ref: number) =>
+      ref > 0 ? Math.min(1.25, Math.log1p(v) / Math.log1p(ref)) : 0;
 
-    const bids: number[] = new Array(HEATMAP_LEVELS);
-    const asks: number[] = new Array(HEATMAP_LEVELS);
+    let bids: number[] = new Array(HEATMAP_LEVELS);
+    let asks: number[] = new Array(HEATMAP_LEVELS);
     for (let i = 0; i < HEATMAP_LEVELS; i++) {
-      bids[i] = norm(bidSizes[i], maxBid);
-      asks[i] = norm(askSizes[i], maxAsk);
+      bids[i] = norm(bidSizes[i], bidRef);
+      asks[i] = norm(askSizes[i], askRef);
     }
 
-    const prev = this.heatmap[this.heatmap.length - 1];
-    if (prev && nowMs - prev.time < HEATMAP_FRAME_MS) {
-      prev.prices = prices;
-      prev.bids = bids;
-      prev.asks = asks;
-      prev.time = nowMs;
+    // Temporal persistence — walls trail across frames (MMT heatmap feel).
+    const prevFrame = this.heatmap[this.heatmap.length - 1];
+    if (prevFrame && prevFrame.bids.length === HEATMAP_LEVELS) {
+      for (let i = 0; i < HEATMAP_LEVELS; i++) {
+        bids[i] = Math.max(bids[i], prevFrame.bids[i] * 0.72);
+        asks[i] = Math.max(asks[i], prevFrame.asks[i] * 0.72);
+      }
+    }
+
+    if (prevFrame && nowMs - prevFrame.time < HEATMAP_FRAME_MS) {
+      prevFrame.prices = prices;
+      prevFrame.bids = bids;
+      prevFrame.asks = asks;
+      prevFrame.time = nowMs;
     } else {
       this.heatmap.push({ time: nowMs, prices, bids, asks });
       if (this.heatmap.length > MAX_HEATMAP) this.heatmap.shift();

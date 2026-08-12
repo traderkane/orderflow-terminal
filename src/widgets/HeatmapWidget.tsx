@@ -33,39 +33,76 @@ export function HeatmapWidget() {
       return;
     }
 
-    const frames = heatmap.slice(-160);
-    const levels = frames[frames.length - 1]?.prices.length || frames[0].prices.length;
+    const frames = heatmap.slice(-200);
+    const levels =
+      frames[frames.length - 1]?.prices.length || frames[0].prices.length;
+    // Slight overlap + ease so time axis reads as a trail, not stamps.
     const cellW = w / Math.max(frames.length, 1);
     const cellH = h / Math.max(levels, 1);
 
-    let peak = 0;
+    const samples: number[] = [];
     for (const frame of frames) {
       for (let y = 0; y < levels; y++) {
-        peak = Math.max(peak, frame.bids[y] ?? 0, frame.asks[y] ?? 0);
+        const v = Math.max(frame.bids[y] ?? 0, frame.asks[y] ?? 0);
+        if (v > 0.001) samples.push(v);
       }
     }
+    samples.sort((a, b) => a - b);
+    const peak =
+      samples.length > 0
+        ? samples[Math.min(samples.length - 1, Math.floor(samples.length * 0.94))]
+        : 1;
     const invPeak = peak > 0 ? 1 / peak : 1;
 
     for (let x = 0; x < frames.length; x++) {
       const frame = frames[x];
+      const prev = x > 0 ? frames[x - 1] : frame;
+      const next = x + 1 < frames.length ? frames[x + 1] : frame;
+      // Ease recent columns a touch wider visually via overlap
+      const t = x / Math.max(1, frames.length - 1);
+      const ease = t * t * (3 - 2 * t);
+      const xLeft = x * cellW - cellW * 0.12;
+      const xRight = (x + 1) * cellW + cellW * (0.18 + ease * 0.08);
+      const drawW = Math.max(1, xRight - xLeft);
+
       for (let y = 0; y < levels; y++) {
-        const bid = frame.bids[y] ?? 0;
-        const ask = frame.asks[y] ?? 0;
-        const raw = Math.max(bid, ask) * invPeak;
-        if (raw < 0.012) continue;
-        const intensity = Math.min(1, Math.pow(raw, 0.52));
-        const isBid = bid >= ask;
-        const alpha = 0.16 + intensity * 0.84;
-        ctx.fillStyle = isBid
-          ? `rgba(14, 203, 129, ${alpha})`
-          : `rgba(246, 70, 93, ${alpha})`;
+        const bidRaw =
+          (frame.bids[y] ?? 0) * 0.5 +
+          (prev.bids[y] ?? frame.bids[y] ?? 0) * 0.2 +
+          (next.bids[y] ?? frame.bids[y] ?? 0) * 0.2 +
+          (frame.bids[y - 1] ?? frame.bids[y] ?? 0) * 0.05 +
+          (frame.bids[y + 1] ?? frame.bids[y] ?? 0) * 0.05;
+        const askRaw =
+          (frame.asks[y] ?? 0) * 0.5 +
+          (prev.asks[y] ?? frame.asks[y] ?? 0) * 0.2 +
+          (next.asks[y] ?? frame.asks[y] ?? 0) * 0.2 +
+          (frame.asks[y - 1] ?? frame.asks[y] ?? 0) * 0.05 +
+          (frame.asks[y + 1] ?? frame.asks[y] ?? 0) * 0.05;
+
+        const rawBid = Math.min(1.4, bidRaw * invPeak);
+        const rawAsk = Math.min(1.4, askRaw * invPeak);
+        if (rawBid < 0.01 && rawAsk < 0.01) continue;
+
+        const bidI = Math.min(1, Math.pow(Math.max(0, rawBid), 0.46));
+        const askI = Math.min(1, Math.pow(Math.max(0, rawAsk), 0.46));
         const py = h - (y + 1) * cellH;
-        ctx.fillRect(
-          Math.floor(x * cellW),
-          Math.floor(py),
-          Math.ceil(cellW) + 1,
-          Math.ceil(cellH) + 1,
-        );
+        const drawH = Math.ceil(cellH) + 1;
+
+        if (bidI >= askI) {
+          ctx.fillStyle = `rgba(14, 203, 129, ${0.14 + bidI * 0.86})`;
+          ctx.fillRect(Math.floor(xLeft), Math.floor(py), Math.ceil(drawW) + 1, drawH);
+          if (askI > 0.07) {
+            ctx.fillStyle = `rgba(246, 70, 93, ${0.06 + askI * 0.28})`;
+            ctx.fillRect(Math.floor(xLeft), Math.floor(py), Math.ceil(drawW) + 1, drawH);
+          }
+        } else {
+          ctx.fillStyle = `rgba(246, 70, 93, ${0.14 + askI * 0.86})`;
+          ctx.fillRect(Math.floor(xLeft), Math.floor(py), Math.ceil(drawW) + 1, drawH);
+          if (bidI > 0.07) {
+            ctx.fillStyle = `rgba(14, 203, 129, ${0.06 + bidI * 0.28})`;
+            ctx.fillRect(Math.floor(xLeft), Math.floor(py), Math.ceil(drawW) + 1, drawH);
+          }
+        }
       }
     }
 

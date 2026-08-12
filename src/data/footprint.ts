@@ -146,6 +146,11 @@ export function footprintBarsForChart(
 
   const bucket = (sec: number) => Math.floor(sec / intervalSec) * intervalSec;
 
+  // Track which candle buckets already have real aggressor prints.
+  const hasRealPrint = new Set<number>();
+  let realMin = Infinity;
+  let realMax = -Infinity;
+
   for (const src of footprint1m) {
     const t = bucket(src.time);
     let bar = byTime.get(t);
@@ -153,34 +158,61 @@ export function footprintBarsForChart(
       // Outside candle window — keep only if near edges
       continue;
     }
+    let added = false;
     for (const l of src.levels) {
       const key = Math.round(l.price / step) * step;
-      mergeLevel(bar, key, l.buyVolume, l.sellVolume);
+      if (l.buyVolume > 0 || l.sellVolume > 0) {
+        mergeLevel(bar, key, l.buyVolume, l.sellVolume);
+        added = true;
+      }
+    }
+    if (added) {
+      hasRealPrint.add(t);
+      realMin = Math.min(realMin, t);
+      realMax = Math.max(realMax, t);
     }
   }
 
+  // Trades top up only empty buckets — footprint already accumulates live
+  // aggressors, so merging every trade again would double-count density.
   for (const tr of trades) {
     const t = bucket(tradeTimeSec(tr.time));
     const bar = byTime.get(t);
     if (!bar) continue;
+    realMin = Math.min(realMin, t);
+    realMax = Math.max(realMax, t);
+    if (hasRealPrint.has(t) || bar.levels.size > 0) continue;
     const key = Math.round(tr.price / step) * step;
     if (tr.side === 'buy') mergeLevel(bar, key, tr.size, 0);
     else mergeLevel(bar, key, 0, tr.size);
+    if (bar.levels.size > 0) hasRealPrint.add(t);
   }
 
-  // Coarse seed for empty candles so higher TFs / cold start aren't blank.
+  const hasLiveCoverage = Number.isFinite(realMin) && Number.isFinite(realMax);
+
+  // Coarse OHLC seed only for cold-start / history outside live coverage.
+  // When tape/footprint already cover a window, leave empty bars empty so
+  // 1m fidelity isn't washed out by synthetic mid/hi/lo blobs.
   for (const c of candles) {
     const bar = byTime.get(c.time);
     if (!bar || bar.levels.size > 0) continue;
     if (!(c.volume > 0)) continue;
+    if (
+      hasLiveCoverage &&
+      c.time >= realMin - intervalSec &&
+      c.time <= realMax + intervalSec
+    ) {
+      continue;
+    }
     const buy = c.close >= c.open ? c.volume * 0.55 : c.volume * 0.45;
     const sell = c.volume - buy;
     const mid = Math.round(((c.high + c.low + c.close) / 3) / step) * step;
     const hi = Math.round(c.high / step) * step;
     const lo = Math.round(c.low / step) * step;
-    mergeLevel(bar, mid, buy * 0.55, sell * 0.55);
-    mergeLevel(bar, hi, buy * 0.22, sell * 0.22);
-    mergeLevel(bar, lo, buy * 0.23, sell * 0.23);
+    // Lighter seed — just enough silhouette for empty history
+    mergeLevel(bar, mid, buy * 0.4, sell * 0.4);
+    if (hi !== mid) mergeLevel(bar, hi, buy * 0.15, sell * 0.15);
+    if (lo !== mid) mergeLevel(bar, lo, buy * 0.15, sell * 0.15);
   }
 
   const out: FootprintBar[] = [];
@@ -242,8 +274,10 @@ export function footprintCellImbalance(
 
 export function formatFootprintVol(v: number): string {
   if (!(v > 0)) return '';
+  if (v >= 10000) return `${(v / 1000).toFixed(0)}k`;
   if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
   if (v >= 100) return v.toFixed(0);
   if (v >= 10) return v.toFixed(1);
-  return v.toFixed(2);
+  if (v >= 1) return v.toFixed(2);
+  return v.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
 }
