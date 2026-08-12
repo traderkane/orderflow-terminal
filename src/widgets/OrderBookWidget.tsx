@@ -9,6 +9,8 @@ export function OrderBookWidget() {
   const book = useTerminalStore((s) => s.feed?.book);
   const trades = useTerminalStore((s) => s.feed?.trades);
   const last = useTerminalStore((s) => s.feed?.stats.last);
+  const hoverPrice = useTerminalStore((s) => s.hoverPrice);
+  const setHoverPrice = useTerminalStore((s) => s.setHoverPrice);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [levelsEach, setLevelsEach] = useState(14);
 
@@ -79,8 +81,39 @@ export function OrderBookWidget() {
   const lastPx = last ?? mid;
   const spreadPct = mid > 0 ? (book.spread / mid) * 100 : 0;
 
+  const syncPrice = (() => {
+    if (hoverPrice == null) return null;
+    let best: number | null = null;
+    let bestDist = Infinity;
+    for (const lvl of asks) {
+      const d = Math.abs(lvl.price - hoverPrice);
+      if (d < bestDist) {
+        bestDist = d;
+        best = lvl.price;
+      }
+    }
+    for (const lvl of bids) {
+      const d = Math.abs(lvl.price - hoverPrice);
+      if (d < bestDist) {
+        bestDist = d;
+        best = lvl.price;
+      }
+    }
+    return best;
+  })();
+
+  const onRowEnter = (price: number) => setHoverPrice(price, 'dom');
+  const onBookLeave = () => {
+    // Only clear if DOM owns the hover — chart may still be driving it.
+    const src = useTerminalStore.getState().hoverSource;
+    if (src === 'dom') setHoverPrice(null, null);
+  };
+
   return (
-    <div className="flex h-full flex-col font-mono text-[10px] leading-none">
+    <div
+      className="flex h-full flex-col font-mono text-[10px] leading-none"
+      onMouseLeave={onBookLeave}
+    >
       {/* Imbalance bar */}
       <div className="border-b border-terminal-border/80 px-1.5 py-1">
         <div className="mb-0.5 flex items-center justify-between text-[9px] uppercase tracking-[0.12em] text-terminal-label">
@@ -119,6 +152,8 @@ export function OrderBookWidget() {
                 maxSize={maxSize}
                 maxTotal={maxTotal}
                 flash={hit}
+                synced={syncPrice != null && approxEq(syncPrice, lvl.price, tick)}
+                onHoverPrice={onRowEnter}
               />
             );
           })}
@@ -164,6 +199,8 @@ export function OrderBookWidget() {
                 maxSize={maxSize}
                 maxTotal={maxTotal}
                 flash={hit}
+                synced={syncPrice != null && approxEq(syncPrice, lvl.price, tick)}
+                onHoverPrice={onRowEnter}
               />
             );
           })}
@@ -179,12 +216,16 @@ function LadderRow({
   maxSize,
   maxTotal,
   flash,
+  synced,
+  onHoverPrice,
 }: {
   level: BookLevel;
   side: 'bid' | 'ask';
   maxSize: number;
   maxTotal: number;
   flash: { side: 'buy' | 'sell'; key: string } | null;
+  synced: boolean;
+  onHoverPrice: (price: number) => void;
 }) {
   const safeTotal = Number.isFinite(level.total) ? level.total : 0;
   const safeSize = Number.isFinite(level.size) ? level.size : 0;
@@ -198,11 +239,13 @@ function LadderRow({
       : flash.side === 'buy'
         ? 'dom-flash-buy'
         : 'dom-flash-sell';
+  const syncClass = synced ? 'dom-row-sync' : '';
 
   return (
     <div
-      className={`depth-row dom-row relative grid grid-cols-[1.15fr_1fr_1fr] items-center px-1.5 ${flashClass}`}
+      className={`depth-row dom-row relative grid grid-cols-[1.15fr_1fr_1fr] items-center px-1.5 ${flashClass} ${syncClass}`}
       style={{ height: ROW_H }}
+      onMouseEnter={() => onHoverPrice(level.price)}
     >
       {/* Cumulative depth (full-row wash) */}
       <div

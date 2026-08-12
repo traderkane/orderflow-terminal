@@ -133,6 +133,12 @@ interface TerminalState {
   launcherOpen: boolean;
   openPanel: PanelId;
 
+  /** Shared chart↔DOM hover price (null when not hovering). */
+  hoverPrice: number | null;
+  /** Who last set hoverPrice — chart draws a sync line only for 'dom'. */
+  hoverSource: 'chart' | 'dom' | null;
+  setHoverPrice: (price: number | null, source?: 'chart' | 'dom' | null) => void;
+
   alerts: PriceAlert[];
   alertHistory: AlertFire[];
   userTemplates: LayoutTemplate[];
@@ -301,6 +307,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     launcherOpen: false,
     openPanel: null,
 
+    hoverPrice: null,
+    hoverSource: null,
+
     alerts: loadJson<PriceAlert[]>(ALERTS_KEY, []),
     alertHistory: loadJson<AlertFire[]>(ALERT_HISTORY_KEY, []),
     userTemplates: loadJson<LayoutTemplate[]>(TEMPLATES_KEY, []),
@@ -342,7 +351,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     },
 
     setSymbol: (symbol) => {
-      set({ symbol });
+      set({ symbol, hoverPrice: null, hoverSource: null });
       prevMetrics.clear();
       if (get().feedMode === 'live') liveFeed.setSymbol(symbol);
       else mockFeed.setSymbol(symbol);
@@ -455,6 +464,24 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     setLauncherOpen: (launcherOpen) => set({ launcherOpen, openPanel: launcherOpen ? null : get().openPanel }),
     setOpenPanel: (openPanel) =>
       set({ openPanel, launcherOpen: openPanel ? false : get().launcherOpen }),
+
+    setHoverPrice: (price, source = null) => {
+      const cur = get();
+      const nextSource = price == null ? null : (source ?? cur.hoverSource ?? 'chart');
+      if (price == null) {
+        if (cur.hoverPrice == null && cur.hoverSource == null) return;
+        set({ hoverPrice: null, hoverSource: null });
+        return;
+      }
+      if (
+        cur.hoverSource === nextSource &&
+        cur.hoverPrice != null &&
+        Math.abs(cur.hoverPrice - price) < 1e-10
+      ) {
+        return;
+      }
+      set({ hoverPrice: price, hoverSource: nextSource });
+    },
 
     addAlert: ({ symbol, condition, threshold, note }) => {
       const alert: PriceAlert = {

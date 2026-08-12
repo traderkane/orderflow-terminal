@@ -8,6 +8,7 @@ import {
   LineSeries,
   LineStyle,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type MouseEventParams,
   type SeriesMarker,
@@ -172,6 +173,8 @@ export function ChartWidget() {
   const symbolRef = useRef(useTerminalStore.getState().symbol);
   const magnetRef = useRef(true);
   const candlesRef = useRef<Candle[]>([]);
+  const hoverPriceLineRef = useRef<IPriceLine | null>(null);
+  const lastChartHoverRef = useRef<number | null>(null);
 
   const feed = useTerminalStore((s) => s.feed);
   const symbol = useTerminalStore((s) => s.symbol);
@@ -199,6 +202,8 @@ export function ChartWidget() {
   const setShowHeatmap = useTerminalStore((s) => s.setShowHeatmap);
   const setShowProfile = useTerminalStore((s) => s.setShowProfile);
   const setShowBubbles = useTerminalStore((s) => s.setShowBubbles);
+  const hoverPrice = useTerminalStore((s) => s.hoverPrice);
+  const hoverSource = useTerminalStore((s) => s.hoverSource);
 
   flagsRef.current = {
     heatmap: showHeatmap,
@@ -1056,6 +1061,29 @@ export function ChartWidget() {
         }
       }
 
+      // Chart ↔ DOM cohesion: publish hover price / clear on leave
+      if (!param.point) {
+        if (lastChartHoverRef.current != null) {
+          lastChartHoverRef.current = null;
+          const st = useTerminalStore.getState();
+          if (st.hoverSource === 'chart') st.setHoverPrice(null, null);
+        }
+      } else if (!dragRef.current) {
+        const seriesForHover = candleRef.current;
+        if (seriesForHover) {
+          const raw = seriesForHover.coordinateToPrice(param.point.y);
+          const p = raw == null ? null : Number(raw);
+          if (p != null && Number.isFinite(p)) {
+            const prev = lastChartHoverRef.current;
+            // Throttle store writes to ~0.01 price units to keep DOM row stable
+            if (prev == null || Math.abs(prev - p) >= 0.01) {
+              lastChartHoverRef.current = p;
+              useTerminalStore.getState().setHoverPrice(p, 'chart');
+            }
+          }
+        }
+      }
+
       // Hover cursor in select mode
       if (!param.point || dragRef.current) return;
       const series = candleRef.current;
@@ -1222,11 +1250,42 @@ export function ChartWidget() {
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
       chart.timeScale().unsubscribeVisibleTimeRangeChange(onRange);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      hoverPriceLineRef.current = null;
+      lastChartHoverRef.current = null;
       chart.remove();
       chartRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // DOM → chart: subtle sync price line when hovering a book row
+  useEffect(() => {
+    const series = candleRef.current;
+    if (!series) return;
+
+    if (hoverSource === 'dom' && hoverPrice != null && Number.isFinite(hoverPrice)) {
+      if (hoverPriceLineRef.current) {
+        hoverPriceLineRef.current.applyOptions({ price: hoverPrice });
+      } else {
+        hoverPriceLineRef.current = series.createPriceLine({
+          price: hoverPrice,
+          color: 'rgba(212, 212, 216, 0.42)',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+          axisLabelColor: '#1a2030',
+          axisLabelTextColor: '#d4d4d8',
+          title: '',
+        });
+      }
+      return;
+    }
+
+    if (hoverPriceLineRef.current) {
+      series.removePriceLine(hoverPriceLineRef.current);
+      hoverPriceLineRef.current = null;
+    }
+  }, [hoverPrice, hoverSource]);
 
   useEffect(() => {
     if (!feed || !candleRef.current || !volumeRef.current) return;
