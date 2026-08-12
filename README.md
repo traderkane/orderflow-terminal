@@ -4,7 +4,7 @@ MMT-inspired browser crypto **order-flow trading terminal** with a dark multi-wi
 
 Data sources:
 
-- **Live (default)** — public Binance USDT-M futures WebSockets + REST bootstrap (no API keys)
+- **Live (default)** — multi-venue public WebSockets (Binance USDT-M, Bybit linear, OKX swap) + REST bootstrap (no API keys)
 - **Mock** — local simulated feed for offline demo / fallback
 
 ## Quick start
@@ -45,27 +45,31 @@ npm run preview
 10. **TPO / Profile** — Market Profile letters (time spent at price), POC + value area
 11. **Stats** — last, change, funding, OI, spread, volume
 
-## Live Binance feed
+## Live multi-venue feed
 
-`src/data/binanceFeed.ts` connects to Binance **USDT-M futures**:
+`src/data/liveFeed.ts` aggregates selected venues from `src/data/venues/`:
 
-| Stream / REST | Used for |
-| --- | --- |
-| `aggTrade` | Trades tape, CVD, volume profile, footprint |
-| `depth20@100ms` | Order book + heatmap history |
-| `kline_1m` | Chart candles |
-| `markPrice` | Funding rate |
-| `!forceOrder@arr` | Liquidations (filtered to symbol) |
-| REST klines / 24hr ticker / OI | Bootstrap history + stats |
+| Venue | Instruments | Streams |
+| --- | --- | --- |
+| **Binance** | `btcusdt` / `ethusdt` USDT-M | `aggTrade`, `depth20@100ms`, `kline_1m`, `markPrice`, `!forceOrder@arr` |
+| **Bybit** | `BTCUSDT` / `ETHUSDT` linear | `publicTrade`, `orderbook.50`, `tickers` |
+| **OKX** | `BTC-USDT-SWAP` / `ETH-USDT-SWAP` | `trades`, `books5`, `funding-rate` |
 
-Symbols: **BTC/USD** → `btcusdt`, **ETH/USD** → `ethusdt`.
+Symbols: **BTC/USD** / **ETH/USD** → each venue USDT perpetual id (`venues/symbols.ts`).
 
-Toggle **Live / Mock** in the top bar. Live is the default; if the live connection cannot bootstrap, the app falls back to mock.
+Live venue chips subscribe/unsubscribe that exchange. Multi-select merges trades tape (exchange tags), CVD, order book (sizes summed at price), and heatmap from the merged book. Single-venue still works.
+
+### OKX gaps
+
+- `books5` is top **5** levels only (thinner than Binance depth20 / Bybit 50).
+- No OKX liquidation stream yet (Binance `forceOrder` when Binance is selected).
+- Chart/24h bootstrap prefers Binance; else Bybit/OKX REST klines.
 
 Resilience notes:
 
-- REST prefers `fapi.binance.com`, then falls back to `data-api.binance.vision` (spot) when futures REST is geo-blocked.
-- Futures WS is primary. If `aggTrade` / `kline` never arrive (some networks filter them), the feed opens a spot Vision WS for tape + candles while keeping futures depth / liquidations / bookTicker.
+- Binance REST prefers `fapi.binance.com`, then `data-api.binance.vision` when futures REST is geo-blocked.
+- Binance futures WS is primary; spot Vision fallback for tape/klines if futures aggTrade is filtered.
+- If no selected venue becomes live within ~12s, the app falls back to mock.
 
 
 ## Mock feed

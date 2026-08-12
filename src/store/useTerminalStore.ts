@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { mockFeed } from '../data/mockFeed';
-import { binanceFeed } from '../data/binanceFeed';
+import { liveFeed } from '../data/liveFeed';
 import type { FeedMode, FeedSnapshot } from '../data/feedTypes';
 import type {
   ExchangeId,
@@ -65,6 +65,7 @@ interface TerminalState {
   exchanges: ExchangeId[];
   speed: Speed;
   status: FeedStatus;
+  venueStatus: Record<ExchangeId, FeedStatus>;
   feedMode: FeedMode;
   feed: FeedSnapshot | null;
   widgets: WidgetInstance[];
@@ -97,19 +98,22 @@ function persist(widgets: WidgetInstance[], layout: LayoutItem[]) {
 
 function stopAll() {
   mockFeed.stop();
-  binanceFeed.stop();
+  liveFeed.stop();
 }
 
 export const useTerminalStore = create<TerminalState>((set, get) => {
   let unsubData: (() => void) | null = null;
   let unsubStatus: (() => void) | null = null;
+  let unsubVenueStatus: (() => void) | null = null;
   let fallbackArmed = false;
 
   const cleanupSubs = () => {
     unsubData?.();
     unsubStatus?.();
+    unsubVenueStatus?.();
     unsubData = null;
     unsubStatus = null;
+    unsubVenueStatus = null;
   };
 
   const attachMock = () => {
@@ -122,27 +126,33 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
       set({ feed: snap, status: mockFeed.getStatus(), feedMode: 'mock' });
     });
     mockFeed.start();
-    set({ status: 'live', feedMode: 'mock' });
+    set({
+      status: 'live',
+      feedMode: 'mock',
+      venueStatus: { Binance: 'paused', Bybit: 'paused', OKX: 'paused' },
+    });
   };
 
   const attachLive = () => {
     cleanupSubs();
     stopAll();
     fallbackArmed = true;
-    binanceFeed.setSymbol(get().symbol);
-    binanceFeed.setFallbackHandler(() => {
+    liveFeed.setSymbol(get().symbol);
+    liveFeed.setFallbackHandler(() => {
       if (!fallbackArmed) return;
       if (get().feedMode !== 'live') return;
-      console.warn('[Flow] Live Binance feed failed — falling back to mock');
+      console.warn('[Flow] Live multi-venue feed failed — falling back to mock');
       fallbackArmed = false;
       localStorage.setItem(FEED_MODE_KEY, 'mock');
       attachMock();
     });
-    unsubStatus = binanceFeed.onStatus((status) => set({ status }));
-    unsubData = binanceFeed.subscribe((snap) => {
-      set({ feed: snap, status: binanceFeed.getStatus() });
+    liveFeed.setExchanges(get().exchanges);
+    unsubStatus = liveFeed.onStatus((status) => set({ status }));
+    unsubVenueStatus = liveFeed.onVenueStatus((venueStatus) => set({ venueStatus }));
+    unsubData = liveFeed.subscribe((snap) => {
+      set({ feed: snap, status: liveFeed.getStatus() });
     });
-    binanceFeed.start();
+    liveFeed.start();
     set({ feedMode: 'live', status: 'connecting' });
   };
 
@@ -151,6 +161,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     exchanges: ['Binance', 'Bybit', 'OKX'],
     speed: 1,
     status: 'paused',
+    venueStatus: { Binance: 'paused', Bybit: 'paused', OKX: 'paused' },
     feedMode: loadFeedMode(),
     feed: null,
     widgets: loadJson(WIDGETS_KEY, DEFAULT_WIDGETS),
@@ -166,7 +177,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
       else attachMock();
       return () => {
         fallbackArmed = false;
-        binanceFeed.setFallbackHandler(null);
+        liveFeed.setFallbackHandler(null);
         cleanupSubs();
         stopAll();
       };
@@ -178,14 +189,14 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
       if (mode === 'live') attachLive();
       else {
         fallbackArmed = false;
-        binanceFeed.setFallbackHandler(null);
+        liveFeed.setFallbackHandler(null);
         attachMock();
       }
     },
 
     setSymbol: (symbol) => {
       set({ symbol });
-      if (get().feedMode === 'live') binanceFeed.setSymbol(symbol);
+      if (get().feedMode === 'live') liveFeed.setSymbol(symbol);
       else mockFeed.setSymbol(symbol);
     },
 
@@ -194,6 +205,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
       const next = cur.includes(ex) ? cur.filter((e) => e !== ex) : [...cur, ex];
       const exchanges = next.length ? next : cur;
       mockFeed.setExchanges(exchanges);
+      if (get().feedMode === 'live') liveFeed.setExchanges(exchanges);
       set({ exchanges });
     },
 
@@ -205,11 +217,11 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     toggleFeed: () => {
       const { feedMode } = get();
       if (feedMode === 'live') {
-        if (binanceFeed.getStatus() === 'live' || binanceFeed.getStatus() === 'connecting') {
-          binanceFeed.stop();
+        if (liveFeed.getStatus() === 'live' || liveFeed.getStatus() === 'connecting') {
+          liveFeed.stop();
           set({ status: 'paused' });
         } else {
-          binanceFeed.start();
+          liveFeed.start();
           set({ status: 'connecting' });
         }
       } else if (mockFeed.getStatus() === 'live') {

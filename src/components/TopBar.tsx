@@ -1,15 +1,24 @@
 import { useTerminalStore } from "../store/useTerminalStore";
-import type { ExchangeId, SymbolId } from "../types/market";
+import type { ExchangeId, FeedStatus, SymbolId } from "../types/market";
 import type { FeedMode } from "../data/feedTypes";
 
 const SYMBOLS: SymbolId[] = ["BTC/USD", "ETH/USD"];
 const EXCHANGES: ExchangeId[] = ["Binance", "Bybit", "OKX"];
+
+function venueDot(status: FeedStatus | undefined, selected: boolean) {
+  if (!selected) return "bg-zinc-700";
+  if (status === "live") return "bg-emerald-400";
+  if (status === "connecting") return "animate-pulse bg-sky-400";
+  if (status === "error") return "bg-rose-500";
+  return "bg-amber-400";
+}
 
 export function TopBar() {
   const symbol = useTerminalStore((s) => s.symbol);
   const exchanges = useTerminalStore((s) => s.exchanges);
   const speed = useTerminalStore((s) => s.speed);
   const status = useTerminalStore((s) => s.status);
+  const venueStatus = useTerminalStore((s) => s.venueStatus);
   const feedMode = useTerminalStore((s) => s.feedMode);
   const setSymbol = useTerminalStore((s) => s.setSymbol);
   const setFeedMode = useTerminalStore((s) => s.setFeedMode);
@@ -31,6 +40,10 @@ export function TopBar() {
         : status === "error"
           ? "bg-rose-500"
           : "bg-amber-400";
+
+  const connected = EXCHANGES.filter(
+    (ex) => exchanges.includes(ex) && venueStatus[ex] === "live",
+  );
 
   return (
     <header className="flex h-11 shrink-0 items-center gap-2.5 border-b border-terminal-border bg-[#080b11] px-2.5">
@@ -59,10 +72,12 @@ export function TopBar() {
       </select>
 
       <div className="flex overflow-hidden rounded border border-terminal-border">
-        {([
-          ["live", "Live"],
-          ["mock", "Mock"],
-        ] as const).map(([mode, label]) => (
+        {(
+          [
+            ["live", "Live"],
+            ["mock", "Mock"],
+          ] as const
+        ).map(([mode, label]) => (
           <button
             key={mode}
             type="button"
@@ -74,37 +89,54 @@ export function TopBar() {
                   : "bg-zinc-800 text-zinc-100"
                 : "text-zinc-500 hover:text-zinc-300"
             }`}
-            title={mode === "live" ? "Binance USDT-M futures (public WS)" : "Local simulated feed"}
+            title={
+              mode === "live"
+                ? "Multi-venue public WS (Binance / Bybit / OKX)"
+                : "Local simulated feed"
+            }
           >
             {label}
           </button>
         ))}
       </div>
 
-      {live ? (
-        <span className="hidden rounded border border-terminal-border px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-500 sm:inline">
-          Binance USDT-M
+      <div className="flex items-center gap-1">
+        {EXCHANGES.map((ex) => {
+          const on = exchanges.includes(ex);
+          const vStatus = venueStatus[ex];
+          return (
+            <button
+              key={ex}
+              type="button"
+              onClick={() => toggleExchange(ex)}
+              title={
+                live
+                  ? on
+                    ? `${ex}: ${vStatus}`
+                    : `${ex}: off (click to subscribe)`
+                  : on
+                    ? `${ex} mock tag on`
+                    : `${ex} mock tag off`
+              }
+              className={`flex items-center gap-1.5 rounded border px-2 py-1 text-[11px] ${
+                on
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                  : "border-terminal-border bg-transparent text-zinc-500"
+              }`}
+            >
+              {live && <span className={`h-1.5 w-1.5 rounded-full ${venueDot(vStatus, on)}`} />}
+              {ex}
+            </button>
+          );
+        })}
+      </div>
+
+      {live && (
+        <span className="hidden rounded border border-terminal-border px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-500 lg:inline">
+          {connected.length
+            ? `WS ${connected.map((e) => e.slice(0, 3)).join("+")}`
+            : "WS …"}
         </span>
-      ) : (
-        <div className="flex items-center gap-1">
-          {EXCHANGES.map((ex) => {
-            const on = exchanges.includes(ex);
-            return (
-              <button
-                key={ex}
-                type="button"
-                onClick={() => toggleExchange(ex)}
-                className={`rounded border px-2 py-1 text-[11px] ${
-                  on
-                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                    : "border-terminal-border bg-transparent text-zinc-500"
-                }`}
-              >
-                {ex}
-              </button>
-            );
-          })}
-        </div>
       )}
 
       <div className="ml-auto flex items-center gap-3">
