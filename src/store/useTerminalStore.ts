@@ -12,12 +12,13 @@ import type {
   WidgetType,
 } from '../types/market';
 
-const LAYOUT_KEY = 'flow-terminal-layout-v2';
-const WIDGETS_KEY = 'flow-terminal-widgets-v2';
+const LAYOUT_KEY = 'flow-terminal-layout-v3';
+const WIDGETS_KEY = 'flow-terminal-widgets-v3';
 const FEED_MODE_KEY = 'flow-terminal-feed-mode';
 
 const DEFAULT_WIDGETS: WidgetInstance[] = [
   { id: 'chart', type: 'chart' },
+  { id: 'footprint', type: 'footprint' },
   { id: 'orderbook', type: 'orderbook' },
   { id: 'trades', type: 'trades' },
   { id: 'heatmap', type: 'heatmap' },
@@ -28,9 +29,10 @@ const DEFAULT_WIDGETS: WidgetInstance[] = [
 ];
 
 const DEFAULT_LAYOUT: LayoutItem[] = [
-  { i: 'chart', x: 0, y: 0, w: 7, h: 12, minW: 4, minH: 7 },
-  { i: 'orderbook', x: 7, y: 0, w: 3, h: 12, minW: 2, minH: 6 },
-  { i: 'trades', x: 10, y: 0, w: 2, h: 12, minW: 2, minH: 6 },
+  { i: 'chart', x: 0, y: 0, w: 6, h: 12, minW: 4, minH: 7 },
+  { i: 'footprint', x: 6, y: 0, w: 4, h: 12, minW: 3, minH: 6 },
+  { i: 'orderbook', x: 10, y: 0, w: 2, h: 6, minW: 2, minH: 4 },
+  { i: 'trades', x: 10, y: 6, w: 2, h: 6, minW: 2, minH: 4 },
   { i: 'heatmap', x: 0, y: 12, w: 4, h: 5, minW: 3, minH: 4 },
   { i: 'cvd', x: 4, y: 12, w: 3, h: 5, minW: 2, minH: 4 },
   { i: 'volumeProfile', x: 7, y: 12, w: 3, h: 5, minW: 2, minH: 4 },
@@ -260,6 +262,10 @@ export const WIDGET_META: Record<
   heatmap: { title: 'Book Heatmap', description: 'Time × price liquidity' },
   cvd: { title: 'CVD / Delta', description: 'Cumulative volume delta' },
   volumeProfile: { title: 'Volume Profile', description: 'VPVR-style profile' },
+  footprint: {
+    title: 'Footprint',
+    description: 'Clustered bid/ask volume by price',
+  },
   liquidations: { title: 'Liquidations', description: 'Forced order feed' },
   stats: { title: 'Stats', description: 'Last, funding, OI, spread' },
 };

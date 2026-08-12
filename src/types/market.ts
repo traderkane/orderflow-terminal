@@ -71,6 +71,23 @@ export interface VolumeProfileBin {
   total: number;
 }
 
+/** Price-level cell inside a footprint bar (aggressor buy/sell volumes). */
+export interface FootprintLevel {
+  price: number;
+  buyVolume: number;
+  sellVolume: number;
+  delta: number;
+}
+
+/** Candle-aligned clustered volume / footprint column. */
+export interface FootprintBar {
+  time: number;
+  levels: FootprintLevel[];
+  buyVolume: number;
+  sellVolume: number;
+  delta: number;
+}
+
 export interface MarketStats {
   last: number;
   change24h: number;
@@ -91,6 +108,7 @@ export type WidgetType =
   | 'heatmap'
   | 'cvd'
   | 'volumeProfile'
+  | 'footprint'
   | 'liquidations'
   | 'stats';
 

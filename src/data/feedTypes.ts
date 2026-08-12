@@ -2,6 +2,7 @@ import type {
   Candle,
   CvdPoint,
   VwapPoint,
+  FootprintBar,
   HeatmapFrame,
   Liquidation,
   MarketStats,
@@ -20,6 +21,7 @@ export interface FeedSnapshot {
   liquidations: Liquidation[];
   heatmap: HeatmapFrame[];
   volumeProfile: VolumeProfileBin[];
+  footprint: FootprintBar[];
   stats: MarketStats;
   vwap: number;
   vwapSeries: VwapPoint[];

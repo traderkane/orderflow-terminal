@@ -8,6 +8,7 @@ import { TradesTapeWidget } from '../widgets/TradesTapeWidget';
 import { HeatmapWidget } from '../widgets/HeatmapWidget';
 import { CvdWidget } from '../widgets/CvdWidget';
 import { VolumeProfileWidget } from '../widgets/VolumeProfileWidget';
+import { FootprintWidget } from '../widgets/FootprintWidget';
 import { LiquidationsWidget } from '../widgets/LiquidationsWidget';
 import { StatsWidget } from '../widgets/StatsWidget';
 import type { LayoutItem, WidgetType } from '../types/market';
@@ -28,6 +29,8 @@ function renderWidget(type: WidgetType) {
       return <CvdWidget />;
     case 'volumeProfile':
       return <VolumeProfileWidget />;
+    case 'footprint':
+      return <FootprintWidget />;
     case 'liquidations':
       return <LiquidationsWidget />;
     case 'stats':

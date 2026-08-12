@@ -12,6 +12,12 @@ import type {
   VwapPoint,
 } from '../types/market';
 import type { FeedListener, FeedSnapshot } from './feedTypes';
+import {
+  bumpFootprint,
+  footprintStep,
+  serializeFootprint,
+  type FootprintBarMut,
+} from './footprint';
 
 const SYMBOL_MAP: Record<SymbolId, string> = {
   'BTC/USD': 'btcusdt',
@@ -118,6 +124,7 @@ export class BinanceFeed {
   private depthBids: { price: number; size: number }[] = [];
   private depthAsks: { price: number; size: number }[] = [];
   private volumeProfile = new Map<number, VolumeProfileBin>();
+  private footprintBars: FootprintBarMut[] = [];
   private book: OrderBook = { bids: [], asks: [], spread: 0, mid: 0 };
   private cvd = 0;
   private last = 0;
@@ -217,6 +224,7 @@ export class BinanceFeed {
     this.depthBids = [];
     this.depthAsks = [];
     this.volumeProfile.clear();
+    this.footprintBars = [];
     this.book = { bids: [], asks: [], spread: 0, mid: 0 };
     this.cvd = 0;
     this.last = 0;
@@ -281,6 +289,8 @@ export class BinanceFeed {
     this.cvd = 0;
     this.cvdSeries = [];
     this.volumeProfile.clear();
+    this.footprintBars = [];
+    const step = footprintStep(this.symbol);
     for (const c of this.candles) {
       const delta = (c.close >= c.open ? 1 : -1) * c.volume * 0.55;
       this.cvd += delta;
@@ -288,6 +298,7 @@ export class BinanceFeed {
       const buy = c.close >= c.open ? c.volume * 0.55 : c.volume * 0.45;
       const sell = c.volume - buy;
       this.bumpProfile(c.close, buy, sell);
+      bumpFootprint(this.footprintBars, this.candleSec, step, c.time, c.close, buy, sell);
     }
   }
 
@@ -547,6 +558,15 @@ export class BinanceFeed {
     this.low24 = this.low24 ? Math.min(this.low24, price) : price;
     this.volume24 += size;
     this.bumpProfile(price, side === 'buy' ? size : 0, side === 'sell' ? size : 0);
+    bumpFootprint(
+      this.footprintBars,
+      this.candleSec,
+      footprintStep(this.symbol),
+      Math.floor(msg.T / 1000),
+      price,
+      side === 'buy' ? size : 0,
+      side === 'sell' ? size : 0,
+    );
 
     const nowSec = Math.floor(msg.T / 1000);
     this.updateCandleFromTrade(nowSec, price, size);
@@ -854,6 +874,7 @@ export class BinanceFeed {
       liquidations: [...this.liquidations],
       heatmap: [...this.heatmap],
       volumeProfile: profile,
+      footprint: serializeFootprint(this.footprintBars, last),
       vwap: vv ? pv / vv : last,
       vwapSeries,
       stats: {

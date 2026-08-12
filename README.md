@@ -39,8 +39,9 @@ npm run preview
 4. **Order Book Heatmap** — canvas time × price liquidity
 5. **CVD / Volume Delta** — cumulative delta line + per-bar histogram
 6. **Volume Profile** — VPVR-style buy/sell profile with POC
-7. **Liquidations** — forced order feed
-8. **Stats** — last, change, funding, OI, spread, volume
+7. **Footprint** — candle-aligned clustered bid/ask volume with imbalance highlights
+8. **Liquidations** — forced order feed
+9. **Stats** — last, change, funding, OI, spread, volume
 
 ## Live Binance feed
 
@@ -48,7 +49,7 @@ npm run preview
 
 | Stream / REST | Used for |
 | --- | --- |
-| `aggTrade` | Trades tape, CVD, volume profile |
+| `aggTrade` | Trades tape, CVD, volume profile, footprint |
 | `depth20@100ms` | Order book + heatmap history |
 | `kline_1m` | Chart candles |
 | `markPrice` | Funding rate |

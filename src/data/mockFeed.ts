@@ -11,6 +11,12 @@ import type {
   VolumeProfileBin,
 } from '../types/market';
 import type { FeedListener, FeedSnapshot } from './feedTypes';
+import {
+  bumpFootprint,
+  footprintStep,
+  serializeFootprint,
+  type FootprintBarMut,
+} from './footprint';
 
 export type { FeedListener, FeedSnapshot } from './feedTypes';
 
@@ -48,6 +54,7 @@ export class MockFeed {
   private cvdSeries: CvdPoint[] = [];
   private heatmap: HeatmapFrame[] = [];
   private volumeProfile = new Map<number, VolumeProfileBin>();
+  private footprintBars: FootprintBarMut[] = [];
   private cvd = 0;
   private dayOpen = 0;
   private high24 = 0;
@@ -122,6 +129,7 @@ export class MockFeed {
     this.cvdSeries = [];
     this.heatmap = [];
     this.volumeProfile.clear();
+    this.footprintBars = [];
     this.fundingRate = (this.rand() - 0.5) * 0.0008;
     this.openInterest = symbol === 'BTC/USD' ? 1.25e9 : 4.2e8;
 
@@ -144,7 +152,18 @@ export class MockFeed {
       const delta = (close >= open ? 1 : -1) * volume * (0.3 + this.rand() * 0.7);
       this.cvd += delta;
       this.cvdSeries.push({ time: t, value: this.cvd, delta });
-      this.bumpProfile(close, volume * (0.4 + this.rand() * 0.3), volume * (0.4 + this.rand() * 0.3));
+      const buy = volume * (0.4 + this.rand() * 0.3);
+      const sell = volume * (0.4 + this.rand() * 0.3);
+      this.bumpProfile(close, buy, sell);
+      bumpFootprint(
+        this.footprintBars,
+        this.candleSec,
+        footprintStep(this.symbol),
+        t,
+        close,
+        buy,
+        sell,
+      );
     }
 
     this.mid = price;
@@ -173,6 +192,15 @@ export class MockFeed {
       this.high24 = Math.max(this.high24, price);
       this.low24 = Math.min(this.low24, price);
       this.bumpProfile(price, side === 'buy' ? size : 0, side === 'sell' ? size : 0);
+      bumpFootprint(
+        this.footprintBars,
+        this.candleSec,
+        footprintStep(this.symbol),
+        now,
+        price,
+        side === 'buy' ? size : 0,
+        side === 'sell' ? size : 0,
+      );
 
       this.updateCandle(now, price, size);
       this.updateCvdPoint(now, signed);
@@ -331,6 +359,7 @@ export class MockFeed {
       liquidations: [...this.liquidations],
       heatmap: [...this.heatmap],
       volumeProfile: profile,
+      footprint: serializeFootprint(this.footprintBars, last),
       vwap: vv ? pv / vv : last,
       vwapSeries,
       stats: {
