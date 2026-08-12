@@ -29,6 +29,11 @@ import {
   persistChartInterval,
   type ChartInterval,
 } from '../lib/chartIntervals';
+import {
+  loadChartMode,
+  persistChartMode,
+  type ChartMode,
+} from '../lib/chartMode';
 
 const LAYOUT_KEY = 'flow-terminal-layout-v6';
 const WIDGETS_KEY = 'flow-terminal-widgets-v6';
@@ -89,6 +94,7 @@ interface TerminalState {
   venueStatus: Record<ExchangeId, FeedStatus>;
   feedMode: FeedMode;
   chartInterval: ChartInterval;
+  chartMode: ChartMode;
   feed: FeedSnapshot | null;
   widgets: WidgetInstance[];
   layout: LayoutItem[];
@@ -110,6 +116,7 @@ interface TerminalState {
   initFeed: () => () => void;
   setFeedMode: (mode: FeedMode) => void;
   setChartInterval: (interval: ChartInterval) => void;
+  setChartMode: (mode: ChartMode) => void;
   setSymbol: (symbol: SymbolId) => void;
   toggleExchange: (ex: ExchangeId) => void;
   setSpeed: (speed: Speed) => void;
@@ -245,6 +252,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     venueStatus: { Binance: 'paused', Bybit: 'paused', OKX: 'paused' },
     feedMode: loadFeedMode(),
     chartInterval: loadChartInterval(),
+    chartMode: loadChartMode(),
     feed: null,
     widgets: loadJson(WIDGETS_KEY, DEFAULT_WIDGETS),
     layout: loadJson(LAYOUT_KEY, DEFAULT_LAYOUT),
@@ -291,6 +299,11 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
       set({ chartInterval: interval });
       if (get().feedMode === 'live') liveFeed.setChartInterval(interval);
       else mockFeed.setChartInterval(interval);
+    },
+
+    setChartMode: (mode) => {
+      persistChartMode(mode);
+      set({ chartMode: mode });
     },
 
     setSymbol: (symbol) => {

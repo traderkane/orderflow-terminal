@@ -89,9 +89,9 @@ export function FootprintWidget() {
   return (
     <div className="flex h-full flex-col overflow-hidden font-mono text-[9px] leading-[1.05]">
       <div className="flex items-center justify-between border-b border-terminal-border/60 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em] text-terminal-label">
-        <span>Cluster · sell | buy · 1m</span>
-        <span className="normal-case tracking-normal text-zinc-500" title="Footprint stays on 1m bars; chart TF does not apply">
-          imb ≥ {IMBALANCE_RATIO}:1
+        <span>Detail · sell | buy · 1m</span>
+        <span className="normal-case tracking-normal text-zinc-500" title="Side table stays on 1m; use Chart → Footprint mode for TF-aligned clusters">
+          imb ≥ {IMBALANCE_RATIO}:1 · chart has FP mode
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-0.5 pb-0.5">

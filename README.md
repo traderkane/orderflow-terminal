@@ -33,13 +33,13 @@ npm run preview
 
 ## Widgets
 
-1. **Chart** — TradingView/MMT-style workspace: left icon drawing rail (select / H-Line / Trend / Rect / Fib / Magnet / Eraser / Clear), bottom layer dock, TF pills **1m / 5m / 15m / 1h**; selected-drawing properties mini-panel (color / width / extend L-R / delete); magnet snap to candle OHLC+mid; maximize chart from header (**F** / Esc); drag-to-move drawings with handles; layers Heatmap / VPVR / Bubbles / VWAP / CVD / Liqs; drawings (+styles) persisted per symbol
+1. **Chart** — TradingView/MMT-style workspace: **Candles | Footprint** mode switch; left icon drawing rail (select / H-Line / Trend / Rect / Fib / Magnet / Eraser / Clear), bottom layer dock, TF pills **1m / 5m / 15m / 1h**; Footprint mode paints clustered sell|buy volumes inside each bar with delta tint + imbalance outlines (best at 1m; denser/compact on higher TFs); selected-drawing properties mini-panel (color / width / extend L-R / delete); magnet snap to candle OHLC+mid; maximize chart from header (**F** / Esc); drag-to-move drawings with handles; layers Heatmap / VPVR / Bubbles / VWAP / CVD / Liqs; drawings (+styles) persisted per symbol
 2. **Order Book / DOM** — bids/asks, depth bars, spread
 3. **Trades Tape** — scrolling aggressor buys/sells with size highlighting
 4. **Order Book Heatmap** — canvas time × price liquidity
 5. **CVD / Volume Delta** — cumulative delta line + per-bar histogram
 6. **Volume Profile** — VPVR-style buy/sell profile with POC
-7. **Footprint** — candle-aligned clustered bid/ask volume with imbalance highlights
+7. **Footprint** — detail side table of clustered bid/ask volume (main chart also has Footprint mode)
 8. **Liquidations** — forced order feed
 9. **Liq Map** — modelled leverage-ladder liquidation density around mark
 10. **TPO / Profile** — Market Profile letters (time spent at price), POC + value area
@@ -72,13 +72,14 @@ Resilience notes:
 - If no selected venue becomes live within ~12s, the app falls back to mock.
 
 
-## Chart timeframes
+## Chart timeframes & modes
 
-Toolbar pills on the chart: **1m · 5m · 15m · 1h** (stored in `localStorage` as `flow-terminal-chart-interval-v1`).
+Toolbar on the chart: **Candles | Footprint** mode (stored as `flow-terminal-chart-mode-v1`) and TF pills **1m · 5m · 15m · 1h** (`flow-terminal-chart-interval-v1`).
 
 - **Live** — Binance futures REST + WS klines rebootstrap/resubscribe for the selected interval (Bybit/OKX REST history when Binance is deselected).
 - **Mock** — synthetic candles regenerated at the selected TF.
-- **Limitation** — Footprint stays on **1m** buckets (does not follow chart TF). TPO has no separate TF control; it builds from the active chart candles.
+- **Footprint mode** — overlays clustered sell|buy at price on the main chart, aligned to the active TF (aggregates 1m footprint + recent trades; seeds coarse levels from candle volume when live cluster history is thin).
+- **Limitation** — the side Footprint widget table stays on **1m** buckets. Chart Footprint on 5m/15m/1h is denser and often number-less when bars are narrow; full MMT-style tick-perfect historical clusters need a dedicated footprint store (not just the rolling live window). TPO builds from the active chart candles.
 
 ## Mock feed
 
