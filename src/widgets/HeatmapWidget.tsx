@@ -78,14 +78,15 @@ export function HeatmapWidget() {
     const cellW = w / Math.max(frames.length, 1);
     const cellH = h / Math.max(levels, 1);
     const isSplat = craft.style === 'splat';
-    const gamma = isSplat ? 0.58 : 0.46;
-    const alphaScale = isSplat ? 0.72 : 0.86;
-    const alphaFloor = isSplat ? 0.1 : 0.14;
+    const gamma = isSplat ? 0.62 : 0.52;
+    const alphaScale = isSplat ? 0.42 : 0.52;
+    const alphaFloor = isSplat ? 0.06 : 0.08;
 
     if (isSplat) {
       ctx.save();
-      ctx.filter = 'blur(0.55px)';
-      ctx.globalCompositeOperation = 'lighter';
+      ctx.filter = 'blur(0.5px)';
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 0.9;
     }
 
     for (let x = 0; x < rebinnedFrames.length; x++) {

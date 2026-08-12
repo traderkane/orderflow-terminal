@@ -28,7 +28,10 @@ export function fmtSize(n: number | null | undefined): string {
   if (abs >= 1000) return fmtNum(n, 2, { compact: true });
   if (abs >= 100) return fmtNum(n, 2);
   if (abs >= 1) return fmtNum(n, 3);
-  return fmtNum(n, 4);
+  if (abs >= 0.01) return fmtNum(n, 3);
+  if (abs >= 0.001) return fmtNum(n, 4);
+  // Dust — keep ladder readable; callers usually filter these out.
+  return abs > 0 ? '<0.001' : '0';
 }
 
 export function fmtPct(n: number | null | undefined, decimals = 2): string {

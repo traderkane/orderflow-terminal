@@ -27,8 +27,8 @@ export const HEATMAP_CRAFT_KEY = 'flow-terminal-heatmap-craft-v1';
 export const HEATMAP_CRAFT_EVENT = 'flow-terminal-heatmap-craft';
 
 export const DEFAULT_HEATMAP_CRAFT: HeatmapCraftPrefs = {
-  lowIntensity: 0.02,
-  peakIntensity: 0.55,
+  lowIntensity: 0.06,
+  peakIntensity: 0.62,
   binMode: 'hd',
   extendLive: true,
   style: 'classic',

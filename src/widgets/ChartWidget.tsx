@@ -464,9 +464,10 @@ export function ChartWidget() {
     const invPeak = peak > 0 ? 1 / peak : 1;
     const lowGate = Math.max(0.004, craft.lowIntensity * 0.9);
     const isSplat = craft.style === 'splat';
-    const gamma = isSplat ? 0.58 : 0.48;
-    const alphaScale = isSplat ? 0.42 : 0.52;
-    const alphaFloor = isSplat ? 0.05 : 0.07;
+    const gamma = isSplat ? 0.62 : 0.52;
+    // Keep walls visible without washing candles / footprint clusters.
+    const alphaScale = isSplat ? 0.26 : 0.32;
+    const alphaFloor = isSplat ? 0.025 : 0.035;
 
     const stretchLeft = Math.max(8, plotW * 0.12);
     const stretchRight = craft.extendLive ? plotW - 6 : Math.min(plotW - 6, (x1 || plotW) + 4);
@@ -474,9 +475,10 @@ export function ChartWidget() {
 
     if (isSplat) {
       ctx.save();
-      // Soft bloom — stand-in for MMT splat without proprietary filters.
-      ctx.filter = 'blur(0.65px)';
-      ctx.globalCompositeOperation = 'lighter';
+      // Soft bloom — source-over keeps candles readable vs additive wash.
+      ctx.filter = 'blur(0.55px)';
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 0.85;
     }
 
     for (let i = 0; i < recent.length; i++) {
@@ -827,12 +829,13 @@ export function ChartWidget() {
     const bodyW = Math.max(6, Math.min(barW * 0.9, barW - 1.5));
     const half = bodyW / 2;
     // Delta strip on the right when there's room (MMT-style column).
-    const showDeltaCol = bodyW >= 26;
+    const showDeltaCol = bodyW >= 30;
     const deltaColW = showDeltaCol ? Math.max(3, Math.min(6, bodyW * 0.14)) : 0;
     const clusterW = bodyW - deltaColW;
-    const showText = bodyW >= 22;
-    const showCompact = bodyW >= 14 && !showText;
-    const fontPx = bodyW >= 36 ? 10 : bodyW >= 28 ? 9 : 8;
+    // At 1m / tight spacing, volume glyphs mush — hide until half-cells fit digits.
+    const showText = bodyW >= 34 && clusterW >= 28;
+    const showCompact = bodyW >= 16 && !showText;
+    const fontPx = bodyW >= 44 ? 10 : bodyW >= 36 ? 9 : 8;
     const minCellH = showText ? 7 : 2.5;
 
     const stepGuess = footprintStep(symbolRef.current) || (
@@ -995,21 +998,18 @@ export function ChartWidget() {
           ctx.fillRect(x0 + clusterW + 0.5, yTop, deltaColW - 0.5, h);
         }
 
-        if (showText && h >= 8) {
+        // Volume glyphs only when they fit; imbalance strokes + POC stay at all LODs.
+        if (showText && h >= 9 && halfCluster >= 12) {
           const useFont = h >= 12 ? fontPx : Math.max(7, fontPx - 1);
           ctx.font = `600 ${useFont}px IBM Plex Mono, JetBrains Mono, monospace`;
           ctx.textBaseline = 'middle';
           const sellLabel = formatFootprintVol(lvl.sellVolume);
           const buyLabel = formatFootprintVol(lvl.buyVolume);
-          // Clip labels into half-cells for zoom fidelity
           if (sellLabel) {
             ctx.fillStyle = imb === 'sell' ? 'rgba(254, 202, 202, 1)' : 'rgba(252, 165, 165, 0.95)';
             ctx.textAlign = 'right';
             const tw = ctx.measureText(sellLabel).width;
             if (tw <= halfCluster - 3) {
-              ctx.fillText(sellLabel, midX - 2, y + 0.5);
-            } else if (halfCluster >= 10) {
-              ctx.font = `600 ${Math.max(7, useFont - 1)}px IBM Plex Mono, JetBrains Mono, monospace`;
               ctx.fillText(sellLabel, midX - 2, y + 0.5);
             }
           }
@@ -1019,9 +1019,6 @@ export function ChartWidget() {
             ctx.textAlign = 'left';
             const tw = ctx.measureText(buyLabel).width;
             if (tw <= halfCluster - 3) {
-              ctx.fillText(buyLabel, midX + 2, y + 0.5);
-            } else if (halfCluster >= 10) {
-              ctx.font = `600 ${Math.max(7, useFont - 1)}px IBM Plex Mono, JetBrains Mono, monospace`;
               ctx.fillText(buyLabel, midX + 2, y + 0.5);
             }
           }
@@ -1178,9 +1175,9 @@ export function ChartWidget() {
     const fpMode = chartModeRef.current === 'footprint';
     if (flags.heatmap && !fpMode) drawHeatmapLayer(ctx, chart, series, w);
     else if (flags.heatmap && fpMode) {
-      // Dimmer heatmap under footprint clusters
+      // Dimmer heatmap under footprint clusters — leave clusters readable
       ctx.save();
-      ctx.globalAlpha = 0.45;
+      ctx.globalAlpha = 0.28;
       drawHeatmapLayer(ctx, chart, series, w);
       ctx.restore();
     }
@@ -2647,6 +2644,15 @@ export function ChartWidget() {
                 <span className="ml-auto font-mono text-[8px] uppercase tracking-wider text-zinc-600">
                   live
                 </span>
+                <button
+                  type="button"
+                  title="Close (Esc)"
+                  aria-label="Close heatmap craft"
+                  onClick={() => setHeatmapMenuOpen(false)}
+                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[2px] font-mono text-[11px] leading-none text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200"
+                >
+                  ×
+                </button>
               </div>
 
               <label className="mb-1 block px-1">

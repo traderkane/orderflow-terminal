@@ -10,6 +10,8 @@ import { useTerminalStore } from '../store/useTerminalStore';
 import { fmtPrice, fmtSize } from '../lib/format';
 import {
   DOM_GROUP_MULTS,
+  domDisplaySize,
+  domDustFloor,
   loadDomPrefs,
   persistDomPrefs,
   type DomGroupMult,
@@ -45,6 +47,7 @@ export function OrderBookWidget() {
   const [groupMult, setGroupMult] = useState<DomGroupMult>(initialPrefs.groupMult);
   const [sizeUnit, setSizeUnit] = useState<DomSizeUnit>(initialPrefs.sizeUnit);
   const [scrollMode, setScrollMode] = useState<DomScrollMode>(initialPrefs.scrollMode);
+  const [minSize, setMinSize] = useState<number>(initialPrefs.minSize);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const [visibleRows, setVisibleRows] = useState(28);
@@ -63,8 +66,8 @@ export function OrderBookWidget() {
 
   // Persist prefs
   useEffect(() => {
-    persistDomPrefs({ groupMult, sizeUnit, scrollMode });
-  }, [groupMult, sizeUnit, scrollMode]);
+    persistDomPrefs({ groupMult, sizeUnit, scrollMode, minSize });
+  }, [groupMult, sizeUnit, scrollMode, minSize]);
 
   // Reset session on symbol change
   useEffect(() => {
@@ -141,11 +144,16 @@ export function OrderBookWidget() {
     const rows = buildLadder(book, groupSize, sessionRef.current, lastPx, mid);
     if (!rows.length) return null;
 
+    const dustCoin = sizeUnit === 'usd'
+      ? Math.max(minSize, domDustFloor('usd')) / Math.max(mid, lastPx, 1)
+      : Math.max(minSize, domDustFloor('coin'));
     let maxBook = 1;
     let maxSession = 1;
     for (const r of rows) {
-      maxBook = Math.max(maxBook, r.bidSize, r.askSize);
-      maxSession = Math.max(maxSession, r.buys, r.sells);
+      if (r.bidSize >= dustCoin) maxBook = Math.max(maxBook, r.bidSize);
+      if (r.askSize >= dustCoin) maxBook = Math.max(maxBook, r.askSize);
+      if (r.buys >= dustCoin) maxSession = Math.max(maxSession, r.buys);
+      if (r.sells >= dustCoin) maxSession = Math.max(maxSession, r.sells);
     }
 
     const askDepth = rows.reduce((s, r) => s + r.askSize, 0);
@@ -156,7 +164,7 @@ export function OrderBookWidget() {
     return { rows, maxBook, maxSession, askDepth, bidDepth, bidPct, lastPx, mid };
     // sessionEpoch intentionally triggers rebuild when session map mutates
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [book, last, groupSize, sessionEpoch]);
+  }, [book, last, groupSize, sessionEpoch, minSize, sizeUnit]);
 
   // Center / auto-recenter scroll
   const centerOnLast = useCallback(() => {
@@ -230,19 +238,22 @@ export function OrderBookWidget() {
     if (src === 'dom') setHoverPrice(null, null);
   };
 
+  const sizeFloor = Math.max(minSize, domDustFloor(sizeUnit));
   const displaySize = (coinSize: number, px: number) => {
-    if (!(coinSize > 0)) return '';
-    if (sizeUnit === 'usd') return fmtSize(coinSize * px);
-    return fmtSize(coinSize);
+    const disp = domDisplaySize(coinSize, px, sizeUnit);
+    if (!(disp > 0) || disp < sizeFloor) return '';
+    return fmtSize(disp);
   };
+  const passSize = (coinSize: number, px: number) =>
+    domDisplaySize(coinSize, px, sizeUnit) >= sizeFloor;
 
   return (
     <div
       className="dom-widget flex h-full flex-col font-mono text-[10px] leading-none"
       onMouseLeave={onBookLeave}
     >
-      {/* Toolbar */}
-      <div className="dom-toolbar flex shrink-0 flex-wrap items-center gap-1 border-b border-terminal-border/80 px-1 py-0.5">
+      {/* Toolbar — nowrap + x-scroll so RESET stays reachable at ~1040px */}
+      <div className="dom-toolbar flex shrink-0 flex-nowrap items-center gap-1 overflow-x-auto border-b border-terminal-border/80 px-1 py-0.5">
         <div className="dom-seg" role="group" aria-label="Price grouping">
           {DOM_GROUP_MULTS.map((m) => (
             <button
@@ -307,9 +318,35 @@ export function OrderBookWidget() {
           ))}
         </div>
 
+        <label
+          className="tape-min flex shrink-0 items-center gap-1 rounded-[2px] border border-white/[0.06] bg-[#0c0f14] px-1 py-0.5"
+          title={`Hide book/session sizes below this ${sizeUnit === 'usd' ? 'USD' : 'coin'} threshold`}
+        >
+          <span className="text-[8px] font-semibold uppercase tracking-[0.08em] text-zinc-600">
+            Min
+          </span>
+          <input
+            type="number"
+            min={0}
+            step={sizeUnit === 'usd' ? 10 : 0.01}
+            value={minSize > 0 ? minSize : ''}
+            placeholder="0"
+            className="tape-min-input w-11 bg-transparent text-right font-mono text-[9px] tabular-nums text-zinc-300 outline-none placeholder:text-zinc-700"
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === '') {
+                setMinSize(0);
+                return;
+              }
+              const n = Number(v);
+              if (Number.isFinite(n) && n >= 0) setMinSize(n);
+            }}
+          />
+        </label>
+
         <button
           type="button"
-          className="dom-reset-btn ml-auto"
+          className="dom-reset-btn ml-auto shrink-0"
           title="Clear session Buys / Sells / Delta"
           onClick={resetSession}
         >
@@ -343,44 +380,46 @@ export function OrderBookWidget() {
         </div>
       </div>
 
-      {/* Column headers */}
-      <div className="dom-colhead grid shrink-0 grid-cols-[0.85fr_0.95fr_1.15fr_0.95fr_0.85fr_0.75fr] px-1 py-0.5 text-[9px] uppercase tracking-[0.1em] text-terminal-label">
-        <span className="text-right">Buys</span>
-        <span className="text-right">Bid</span>
-        <span className="text-center">Price</span>
-        <span className="text-left">Ask</span>
-        <span className="text-left">Sells</span>
-        <span className="text-right">Δ</span>
-      </div>
-
+      {/* Ladder scrolls both axes; min-width keeps Δ usable when panel is narrow */}
       <div
         ref={bodyRef}
-        className="dom-ladder min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
+        className="dom-ladder min-h-0 flex-1 overflow-auto"
       >
-        <div style={{ height: Math.max(0, (visibleRows / 2) * ROW_H) }} aria-hidden />
-        {rows.map((row) => {
-          const hit =
-            flash && approxEq(flash.price, row.price, groupSize)
-              ? { side: flash.side, key: flash.key }
-              : null;
-          const synced =
-            syncPrice != null && approxEq(syncPrice, row.price, groupSize);
-          return (
-            <DomRow
-              key={hit ? `${row.price}-${hit.key}` : String(row.price)}
-              row={row}
-              maxBook={maxBook}
-              maxSession={maxSession}
-              decimals={priceDecimals}
-              displaySize={displaySize}
-              flash={hit}
-              synced={synced}
-              onHoverPrice={onRowEnter}
-            />
-          );
-        })}
-        {/* Spacer so center mode can pin edge prices */}
-        <div style={{ height: Math.max(0, (visibleRows / 2) * ROW_H) }} aria-hidden />
+        <div className="dom-ladder-inner min-w-[300px]">
+          <div className="dom-colhead sticky top-0 z-[1] grid shrink-0 grid-cols-[minmax(34px,0.85fr)_minmax(42px,0.95fr)_minmax(52px,1.15fr)_minmax(42px,0.95fr)_minmax(34px,0.85fr)_minmax(40px,0.75fr)] px-1 py-0.5 text-[9px] uppercase tracking-[0.1em] text-terminal-label">
+            <span className="text-right">Buys</span>
+            <span className="text-right">Bid</span>
+            <span className="text-center">Price</span>
+            <span className="text-left">Ask</span>
+            <span className="text-left">Sells</span>
+            <span className="text-right">Δ</span>
+          </div>
+          <div style={{ height: Math.max(0, (visibleRows / 2) * ROW_H) }} aria-hidden />
+          {rows.map((row) => {
+            const hit =
+              flash && approxEq(flash.price, row.price, groupSize)
+                ? { side: flash.side, key: flash.key }
+                : null;
+            const synced =
+              syncPrice != null && approxEq(syncPrice, row.price, groupSize);
+            return (
+              <DomRow
+                key={hit ? `${row.price}-${hit.key}` : String(row.price)}
+                row={row}
+                maxBook={maxBook}
+                maxSession={maxSession}
+                decimals={priceDecimals}
+                displaySize={displaySize}
+                passSize={passSize}
+                flash={hit}
+                synced={synced}
+                onHoverPrice={onRowEnter}
+              />
+            );
+          })}
+          {/* Spacer so center mode can pin edge prices */}
+          <div style={{ height: Math.max(0, (visibleRows / 2) * ROW_H) }} aria-hidden />
+        </div>
       </div>
     </div>
   );
@@ -392,6 +431,7 @@ function DomRow({
   maxSession,
   decimals,
   displaySize,
+  passSize,
   flash,
   synced,
   onHoverPrice,
@@ -401,14 +441,19 @@ function DomRow({
   maxSession: number;
   decimals: number;
   displaySize: (coin: number, px: number) => string;
+  passSize: (coin: number, px: number) => boolean;
   flash: { side: 'buy' | 'sell'; key: string } | null;
   synced: boolean;
   onHoverPrice: (price: number) => void;
 }) {
-  const bidHeat = heatAlpha(row.bidSize, maxBook);
-  const askHeat = heatAlpha(row.askSize, maxBook);
-  const buyHeat = heatAlpha(row.buys, maxSession, 0.08, 0.5);
-  const sellHeat = heatAlpha(row.sells, maxSession, 0.08, 0.5);
+  const showBid = passSize(row.bidSize, row.price);
+  const showAsk = passSize(row.askSize, row.price);
+  const showBuys = passSize(row.buys, row.price);
+  const showSells = passSize(row.sells, row.price);
+  const bidHeat = showBid ? heatAlpha(row.bidSize, maxBook) : 0;
+  const askHeat = showAsk ? heatAlpha(row.askSize, maxBook) : 0;
+  const buyHeat = showBuys ? heatAlpha(row.buys, maxSession, 0.08, 0.5) : 0;
+  const sellHeat = showSells ? heatAlpha(row.sells, maxSession, 0.08, 0.5) : 0;
 
   const flashClass =
     flash == null ? '' : flash.side === 'buy' ? 'dom-flash-buy' : 'dom-flash-sell';
@@ -421,17 +466,17 @@ function DomRow({
 
   return (
     <div
-      className={`dom-row relative grid grid-cols-[0.85fr_0.95fr_1.15fr_0.95fr_0.85fr_0.75fr] items-center px-1 ${flashClass} ${syncClass} ${lastClass}`}
+      className={`dom-row relative grid grid-cols-[minmax(34px,0.85fr)_minmax(42px,0.95fr)_minmax(52px,1.15fr)_minmax(42px,0.95fr)_minmax(34px,0.85fr)_minmax(40px,0.75fr)] items-center px-1 ${flashClass} ${syncClass} ${lastClass}`}
       style={{ height: ROW_H }}
       onMouseEnter={() => onHoverPrice(row.price)}
     >
       {/* Session buy heat (left of bid) */}
       <div
         className="relative flex h-full items-center justify-end"
-        style={{ background: row.buys > 0 ? `rgba(14,203,129,${buyHeat})` : undefined }}
+        style={{ background: showBuys ? `rgba(14,203,129,${buyHeat})` : undefined }}
       >
         <span className="relative tabular-nums text-[9px] text-up/90">
-          {row.buys > 0 ? displaySize(row.buys, row.price) : ''}
+          {showBuys ? displaySize(row.buys, row.price) : ''}
         </span>
       </div>
 
@@ -440,13 +485,13 @@ function DomRow({
         className="relative flex h-full items-center justify-end"
         style={{
           background:
-            row.bidSize > 0
+            showBid
               ? `linear-gradient(to left, rgba(14,203,129,${bidHeat}) ${Math.min(100, (row.bidSize / maxBook) * 100)}%, transparent ${Math.min(100, (row.bidSize / maxBook) * 100)}%)`
               : undefined,
         }}
       >
         <span className="relative tabular-nums text-zinc-100">
-          {row.bidSize > 0 ? displaySize(row.bidSize, row.price) : ''}
+          {showBid ? displaySize(row.bidSize, row.price) : ''}
         </span>
       </div>
 
@@ -472,30 +517,30 @@ function DomRow({
         className="relative flex h-full items-center justify-start"
         style={{
           background:
-            row.askSize > 0
+            showAsk
               ? `linear-gradient(to right, rgba(246,70,93,${askHeat}) ${Math.min(100, (row.askSize / maxBook) * 100)}%, transparent ${Math.min(100, (row.askSize / maxBook) * 100)}%)`
               : undefined,
         }}
       >
         <span className="relative tabular-nums text-zinc-100">
-          {row.askSize > 0 ? displaySize(row.askSize, row.price) : ''}
+          {showAsk ? displaySize(row.askSize, row.price) : ''}
         </span>
       </div>
 
       {/* Session sell heat */}
       <div
         className="relative flex h-full items-center justify-start"
-        style={{ background: row.sells > 0 ? `rgba(246,70,93,${sellHeat})` : undefined }}
+        style={{ background: showSells ? `rgba(246,70,93,${sellHeat})` : undefined }}
       >
         <span className="relative tabular-nums text-[9px] text-down/90">
-          {row.sells > 0 ? displaySize(row.sells, row.price) : ''}
+          {showSells ? displaySize(row.sells, row.price) : ''}
         </span>
       </div>
 
       {/* Delta */}
       <div className="relative flex h-full items-center justify-end">
         <span className={`tabular-nums text-[9px] ${deltaCls}`}>
-          {delta === 0
+          {delta === 0 || !passSize(Math.abs(delta), row.price)
             ? ''
             : `${delta > 0 ? '+' : '−'}${displaySize(Math.abs(delta), row.price)}`}
         </span>

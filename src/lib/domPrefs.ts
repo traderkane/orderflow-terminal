@@ -13,12 +13,15 @@ export interface DomPrefs {
   groupMult: DomGroupMult;
   sizeUnit: DomSizeUnit;
   scrollMode: DomScrollMode;
+  /** Hide book / session sizes below this; units follow sizeUnit (COIN or USD). */
+  minSize: number;
 }
 
 const DEFAULTS: DomPrefs = {
   groupMult: 1,
   sizeUnit: 'coin',
   scrollMode: 'center',
+  minSize: 0,
 };
 
 function isGroupMult(v: unknown): v is DomGroupMult {
@@ -33,6 +36,11 @@ function isScrollMode(v: unknown): v is DomScrollMode {
   return v === 'center' || v === 'auto' || v === 'free';
 }
 
+function sanitizeMin(n: unknown): number {
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return DEFAULTS.minSize;
+  return n;
+}
+
 export function loadDomPrefs(): DomPrefs {
   try {
     const raw = localStorage.getItem(DOM_PREFS_KEY);
@@ -42,6 +50,7 @@ export function loadDomPrefs(): DomPrefs {
       groupMult: isGroupMult(parsed.groupMult) ? parsed.groupMult : DEFAULTS.groupMult,
       sizeUnit: isSizeUnit(parsed.sizeUnit) ? parsed.sizeUnit : DEFAULTS.sizeUnit,
       scrollMode: isScrollMode(parsed.scrollMode) ? parsed.scrollMode : DEFAULTS.scrollMode,
+      minSize: sanitizeMin(parsed.minSize),
     };
   } catch {
     return { ...DEFAULTS };
@@ -54,4 +63,19 @@ export function persistDomPrefs(prefs: DomPrefs) {
   } catch {
     /* ignore */
   }
+}
+
+/** Absolute dust floor so micro sizes never dominate the ladder. */
+export function domDustFloor(unit: DomSizeUnit): number {
+  return unit === 'usd' ? 1 : 0.001;
+}
+
+/** Display size in the active unit (coin qty or notional USD). */
+export function domDisplaySize(
+  coinSize: number,
+  price: number,
+  unit: DomSizeUnit,
+): number {
+  if (!(coinSize > 0)) return 0;
+  return unit === 'usd' ? coinSize * price : coinSize;
 }

@@ -251,13 +251,19 @@ select {
 /* MMT-style DOM ladder */
 .dom-widget {
   background: transparent;
+  min-width: 0;
 }
 .dom-toolbar {
   background: #080a0e;
+  scrollbar-width: thin;
+}
+.dom-toolbar::-webkit-scrollbar {
+  height: 4px;
 }
 .dom-seg {
   display: inline-flex;
   align-items: stretch;
+  flex-shrink: 0;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 2px;
   overflow: hidden;
@@ -269,13 +275,14 @@ select {
   background: transparent;
   color: #6b7280;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  padding: 2px 6px;
+  padding: 2px 5px;
   line-height: 1.2;
   cursor: pointer;
+  white-space: nowrap;
 }
 .dom-seg-btn + .dom-seg-btn {
   border-left: 1px solid rgba(255, 255, 255, 0.05);
@@ -296,12 +303,13 @@ select {
   background: #0c0f14;
   color: #6b7280;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 2px 7px;
+  padding: 2px 6px;
   cursor: pointer;
+  white-space: nowrap;
 }
 .dom-reset-btn:hover {
   color: #f0b90b;
@@ -334,6 +342,11 @@ select {
 }
 .dom-ladder {
   scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  min-width: 0;
+}
+.dom-ladder-inner {
+  width: 100%;
 }
 
 
