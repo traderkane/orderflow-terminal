@@ -1,4 +1,4 @@
-import { useMemo, type RefObject } from 'react';
+import { useEffect, useMemo, type RefObject } from 'react';
 import GridLayout, { useContainerWidth } from 'react-grid-layout';
 import { useTerminalStore, WIDGET_META } from '../store/useTerminalStore';
 import { WidgetShell } from './WidgetShell';
@@ -44,18 +44,77 @@ function renderWidget(type: WidgetType) {
   }
 }
 
+function ChartMaximizeButton() {
+  const chartMaximized = useTerminalStore((s) => s.chartMaximized);
+  const toggleChartMaximized = useTerminalStore((s) => s.toggleChartMaximized);
+  return (
+    <button
+      type="button"
+      title={chartMaximized ? 'Restore chart (F / Esc)' : 'Maximize chart (F)'}
+      onClick={(e) => {
+        e.stopPropagation();
+        toggleChartMaximized();
+      }}
+      className="rounded-[2px] px-1 py-0.5 font-mono text-[10px] leading-none text-zinc-500 opacity-70 transition hover:bg-white/[0.04] hover:text-zinc-200 hover:opacity-100"
+    >
+      {chartMaximized ? (
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+          <path d="M2 4V2h2M8 2h2v2M10 8v2H8M4 10H2V8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+          <path d="M4 4h4v4H4z" stroke="currentColor" strokeWidth="1.1" opacity="0.7" />
+        </svg>
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+          <path d="M2 4V2h2M8 2h2v2M10 8v2H8M4 10H2V8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 export function TerminalGrid() {
   const widgets = useTerminalStore((s) => s.widgets);
   const layout = useTerminalStore((s) => s.layout);
   const setLayout = useTerminalStore((s) => s.setLayout);
   const removeWidget = useTerminalStore((s) => s.removeWidget);
+  const chartMaximized = useTerminalStore((s) => s.chartMaximized);
+  const setChartMaximized = useTerminalStore((s) => s.setChartMaximized);
   const { width, containerRef, mounted } = useContainerWidth();
   const byId = useMemo(() => new Map(widgets.map((w) => [w.id, w])), [widgets]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === 'f' || e.key === 'F') {
+        // Toggle maximize when a chart exists
+        const hasChart = widgets.some((w) => w.type === 'chart');
+        if (!hasChart) return;
+        e.preventDefault();
+        useTerminalStore.getState().toggleChartMaximized();
+        return;
+      }
+      if (e.key === 'Escape' && chartMaximized) {
+        e.preventDefault();
+        setChartMaximized(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [widgets, chartMaximized, setChartMaximized]);
 
   return (
     <div
       ref={containerRef as RefObject<HTMLDivElement>}
-      className="min-h-0 flex-1 overflow-auto bg-terminal-bg p-0.5"
+      className={`min-h-0 flex-1 overflow-auto bg-terminal-bg p-0.5 ${
+        chartMaximized ? 'grid-chart-maximized' : ''
+      }`}
     >
       {mounted && (
         <GridLayout
@@ -63,9 +122,10 @@ export function TerminalGrid() {
           width={width}
           layout={layout}
           gridConfig={{ cols: 12, rowHeight: 28, margin: [2, 2], containerPadding: [2, 2] }}
-          dragConfig={{ enabled: true, handle: '.drag-handle' }}
-          resizeConfig={{ enabled: true }}
+          dragConfig={{ enabled: !chartMaximized, handle: '.drag-handle' }}
+          resizeConfig={{ enabled: !chartMaximized }}
           onLayoutChange={(next) => {
+            if (chartMaximized) return;
             const cleaned: LayoutItem[] = next.map((item) => ({
               i: item.i,
               x: item.x,
@@ -81,11 +141,20 @@ export function TerminalGrid() {
           {layout.map((item) => {
             const widget = byId.get(item.i);
             if (!widget) return <div key={item.i} />;
+            const isChart = widget.type === 'chart';
             return (
-              <div key={item.i} className="h-full">
+              <div
+                key={item.i}
+                className={`h-full ${isChart ? 'is-chart-widget' : 'is-side-widget'}`}
+              >
                 <WidgetShell
                   title={WIDGET_META[widget.type].title}
-                  onClose={() => removeWidget(widget.id)}
+                  onClose={
+                    chartMaximized && isChart
+                      ? undefined
+                      : () => removeWidget(widget.id)
+                  }
+                  actions={isChart ? <ChartMaximizeButton /> : undefined}
                 >
                   {renderWidget(widget.type)}
                 </WidgetShell>

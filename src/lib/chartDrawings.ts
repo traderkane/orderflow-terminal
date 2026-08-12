@@ -8,23 +8,48 @@ export const DRAWINGS_STORAGE_KEY = 'flow-terminal-drawings-v1';
 /** null / 'select' = cursor mode; eraser deletes on click. */
 export type DrawingTool = 'select' | 'hline' | 'trend' | 'rect' | 'fib' | 'eraser' | null;
 
-export type HorizontalDrawing = {
-  id: string;
-  type: 'hline';
-  price: number;
+export const DRAWING_COLORS = [
+  '#d4d4d8',
+  '#f0b90b',
+  '#0ecb81',
+  '#f6465d',
+  '#38bdf8',
+  '#a78bfa',
+  '#fb923c',
+  '#ffffff',
+] as const;
+
+export const DEFAULT_DRAWING_COLOR = DRAWING_COLORS[0];
+export const DEFAULT_LINE_WIDTH = 1;
+export const LINE_WIDTHS = [1, 2, 3] as const;
+
+export type DrawingStyle = {
+  color: string;
+  lineWidth: number;
 };
 
-export type TrendDrawing = {
+type DrawingBase = DrawingStyle & {
   id: string;
+};
+
+export type HorizontalDrawing = DrawingBase & {
+  type: 'hline';
+  price: number;
+  extendLeft: boolean;
+  extendRight: boolean;
+};
+
+export type TrendDrawing = DrawingBase & {
   type: 'trend';
   t1: number;
   p1: number;
   t2: number;
   p2: number;
+  extendLeft: boolean;
+  extendRight: boolean;
 };
 
-export type RectDrawing = {
-  id: string;
+export type RectDrawing = DrawingBase & {
   type: 'rect';
   t1: number;
   p1: number;
@@ -32,8 +57,7 @@ export type RectDrawing = {
   p2: number;
 };
 
-export type FibDrawing = {
-  id: string;
+export type FibDrawing = DrawingBase & {
   type: 'fib';
   t1: number;
   p1: number;
@@ -70,15 +94,75 @@ export type DrawingHit = {
 
 export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
 
-const LINE = 'rgba(212, 212, 216, 0.55)';
 const LINE_SEL = 'rgba(240, 185, 11, 0.85)';
 const LABEL_BG = 'rgba(10, 12, 16, 0.82)';
 const LABEL_FG = 'rgba(228, 228, 231, 0.92)';
 const HIT_PX = 7;
 const HANDLE_HIT = 9;
-const RECT_FILL = 'rgba(212, 212, 216, 0.06)';
-const RECT_FILL_SEL = 'rgba(240, 185, 11, 0.08)';
-const FIB_FILL = 'rgba(240, 185, 11, 0.04)';
+const MAGNET_PX = 8;
+
+export function defaultDrawingStyle(): DrawingStyle {
+  return { color: DEFAULT_DRAWING_COLOR, lineWidth: DEFAULT_LINE_WIDTH };
+}
+
+export function withDrawingDefaults<T extends ChartDrawing>(d: T): T {
+  const style = defaultDrawingStyle();
+  const color = typeof (d as DrawingStyle).color === 'string' && (d as DrawingStyle).color
+    ? (d as DrawingStyle).color
+    : style.color;
+  const lw = Number((d as DrawingStyle).lineWidth);
+  const lineWidth = Number.isFinite(lw) && lw >= 1 ? Math.min(4, Math.round(lw)) : style.lineWidth;
+
+  if (d.type === 'hline') {
+    return {
+      ...d,
+      color,
+      lineWidth,
+      extendLeft: d.extendLeft ?? true,
+      extendRight: d.extendRight ?? true,
+    };
+  }
+  if (d.type === 'trend') {
+    return {
+      ...d,
+      color,
+      lineWidth,
+      extendLeft: d.extendLeft ?? false,
+      extendRight: d.extendRight ?? false,
+    };
+  }
+  return { ...d, color, lineWidth };
+}
+
+function strokeFor(d: DrawingStyle, selected: boolean, draft = false): string {
+  if (draft) return 'rgba(240,185,11,0.65)';
+  if (selected) return d.color || LINE_SEL;
+  return d.color || DEFAULT_DRAWING_COLOR;
+}
+
+function widthFor(d: DrawingStyle, selected: boolean, draft = false): number {
+  const base = Number.isFinite(d.lineWidth) ? d.lineWidth : 1;
+  return selected || draft ? Math.max(base, base + 0.25) : base;
+}
+
+function hexToRgba(color: string, alpha: number): string {
+  const c = color.trim();
+  if (c.startsWith('rgba') || c.startsWith('rgb')) return c;
+  if (c.startsWith('#') && (c.length === 7 || c.length === 4)) {
+    let r: number, g: number, b: number;
+    if (c.length === 7) {
+      r = parseInt(c.slice(1, 3), 16);
+      g = parseInt(c.slice(3, 5), 16);
+      b = parseInt(c.slice(5, 7), 16);
+    } else {
+      r = parseInt(c[1] + c[1], 16);
+      g = parseInt(c[2] + c[2], 16);
+      b = parseInt(c[3] + c[3], 16);
+    }
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  return `rgba(212, 212, 216, ${alpha})`;
+}
 
 export function newDrawingId(): string {
   return `d_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -100,7 +184,14 @@ export function loadDrawings(): DrawingsBySymbol {
     if (!raw) return {};
     const parsed = JSON.parse(raw) as DrawingsBySymbol;
     if (!parsed || typeof parsed !== 'object') return {};
-    return parsed;
+    const out: DrawingsBySymbol = {};
+    for (const [sym, list] of Object.entries(parsed)) {
+      if (!Array.isArray(list)) continue;
+      out[sym as SymbolId] = list
+        .filter((d): d is ChartDrawing => !!d && typeof d === 'object' && typeof (d as ChartDrawing).id === 'string')
+        .map((d) => withDrawingDefaults(d as ChartDrawing));
+    }
+    return out;
   } catch {
     return {};
   }
@@ -186,6 +277,124 @@ function coordsForTwoPoint(
   return { x1, y1, x2, y2 };
 }
 
+function hlineSpan(
+  plotW: number,
+  extendLeft: boolean,
+  extendRight: boolean,
+): { x0: number; x1: number } {
+  const mid = plotW * 0.5;
+  const half = Math.min(90, Math.max(36, plotW * 0.12));
+  let x0 = mid - half;
+  let x1 = mid + half;
+  if (extendLeft) x0 = 0;
+  if (extendRight) x1 = plotW;
+  if (!extendLeft && !extendRight && x1 - x0 < 24) {
+    x0 = mid - 24;
+    x1 = mid + 24;
+  }
+  return { x0, x1 };
+}
+
+/** Extend a segment toward chart edges (TradingView-style rays). */
+function extendedSegment(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  plotW: number,
+  plotH: number,
+  extendLeft: boolean,
+  extendRight: boolean,
+): { x1: number; y1: number; x2: number; y2: number } {
+  if (!extendLeft && !extendRight) return { x1, y1, x2, y2 };
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) return { x1, y1, x2, y2 };
+
+  const ts: number[] = [];
+  if (Math.abs(dx) > 1e-9) {
+    ts.push((0 - x1) / dx);
+    ts.push((plotW - x1) / dx);
+  }
+  if (Math.abs(dy) > 1e-9) {
+    ts.push((0 - y1) / dy);
+    ts.push((plotH - y1) / dy);
+  }
+
+  const valid = ts
+    .filter((t) => Number.isFinite(t))
+    .filter((t) => {
+      const x = x1 + t * dx;
+      const y = y1 + t * dy;
+      return x >= -2 && x <= plotW + 2 && y >= -2 && y <= plotH + 2;
+    })
+    .sort((a, b) => a - b);
+
+  if (valid.length < 2) return { x1, y1, x2, y2 };
+
+  let tA = 0;
+  let tB = 1;
+  if (extendLeft) tA = valid[0];
+  if (extendRight) tB = valid[valid.length - 1];
+  // Keep anchors if not extending that side
+  if (!extendLeft) tA = 0;
+  if (!extendRight) tB = 1;
+
+  return {
+    x1: x1 + tA * dx,
+    y1: y1 + tA * dy,
+    x2: x1 + tB * dx,
+    y2: y1 + tB * dy,
+  };
+}
+
+export type MagnetCandle = {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+};
+
+/** Snap pointer to nearby candle OHLC / mid within a few px. */
+export function magnetSnap(
+  chart: IChartApi,
+  series: ISeriesApi<'Candlestick'>,
+  candles: MagnetCandle[],
+  x: number,
+  y: number,
+  price: number,
+  time: number,
+  thresholdPx: number = MAGNET_PX,
+): { price: number; time: number } {
+  if (!candles.length) return { price, time };
+  const timeScale = chart.timeScale();
+
+  let bestDist = thresholdPx + 0.01;
+  let bestPrice = price;
+  let bestTime = time;
+
+  for (const c of candles) {
+    const cx = timeScale.timeToCoordinate(Math.floor(c.time) as Time);
+    if (cx == null || !Number.isFinite(cx)) continue;
+    if (Math.abs(cx - x) > thresholdPx * 4) continue;
+    const mid = (c.high + c.low) / 2;
+    for (const p of [c.open, c.high, c.low, c.close, mid]) {
+      const py = series.priceToCoordinate(p);
+      if (py == null || !Number.isFinite(py)) continue;
+      const dist = Math.hypot(cx - x, py - y);
+      if (dist <= bestDist) {
+        bestDist = dist;
+        bestPrice = p;
+        bestTime = c.time;
+      }
+    }
+  }
+
+  if (bestDist <= thresholdPx) return { price: bestPrice, time: bestTime };
+  return { price, time };
+}
+
 function hitRect(
   x: number,
   y: number,
@@ -251,7 +460,12 @@ export function hitTestDrawingDetailed(
     if (d.type === 'hline') {
       const yy = series.priceToCoordinate(d.price);
       if (yy == null || !Number.isFinite(yy)) continue;
-      if (Math.abs(y - yy) <= HIT_PX) return { drawing: d, handle: 'body' };
+      if (Math.abs(y - yy) > HIT_PX) continue;
+      const plotW = chart.timeScale().width() || 0;
+      const span = hlineSpan(plotW, d.extendLeft, d.extendRight);
+      if (x >= span.x0 - HIT_PX && x <= span.x1 + HIT_PX) {
+        return { drawing: d, handle: 'body' };
+      }
       continue;
     }
 
@@ -259,7 +473,19 @@ export function hitTestDrawingDetailed(
     if (!c) continue;
 
     if (d.type === 'trend') {
-      if (distPointToSeg(x, y, c.x1, c.y1, c.x2, c.y2) <= HIT_PX) {
+      const plotW = chart.timeScale().width() || 0;
+      const paneH = chart.chartElement()?.clientHeight || 800;
+      const ext = extendedSegment(
+        c.x1,
+        c.y1,
+        c.x2,
+        c.y2,
+        plotW,
+        paneH,
+        d.extendLeft,
+        d.extendRight,
+      );
+      if (distPointToSeg(x, y, ext.x1, ext.y1, ext.x2, ext.y2) <= HIT_PX) {
         return { drawing: d, handle: 'body' };
       }
     } else if (d.type === 'rect') {
@@ -375,9 +601,9 @@ export function drawChartDrawings(
   for (const d of drawings) {
     const selected = d.id === selectedId;
     if (d.type === 'hline') {
-      drawHLine(ctx, series, d.price, plotW, paneH, selected);
+      drawHLine(ctx, series, d, plotW, paneH, selected);
     } else if (d.type === 'trend') {
-      drawTrend(ctx, chart, series, d, selected);
+      drawTrend(ctx, chart, series, d, selected, false, paneH);
     } else if (d.type === 'rect') {
       drawRect(ctx, chart, series, d, selected);
     } else if (d.type === 'fib') {
@@ -394,11 +620,11 @@ export function drawChartDrawings(
       p2: draft.p2,
     };
     if (draft.type === 'trend') {
-      drawTrend(ctx, chart, series, { ...common, type: 'trend' }, false, true);
+      drawTrend(ctx, chart, series, { ...common, type: 'trend', ...defaultDrawingStyle(), extendLeft: false, extendRight: false }, false, true, paneH);
     } else if (draft.type === 'rect') {
-      drawRect(ctx, chart, series, { ...common, type: 'rect' }, false, true);
+      drawRect(ctx, chart, series, { ...common, type: 'rect', ...defaultDrawingStyle() }, false, true);
     } else if (draft.type === 'fib') {
-      drawFib(ctx, chart, series, { ...common, type: 'fib' }, false, true);
+      drawFib(ctx, chart, series, { ...common, type: 'fib', ...defaultDrawingStyle() }, false, true);
     }
   } else if (draft) {
     const x = timeScale.timeToCoordinate(Math.floor(draft.t1) as Time);
@@ -424,7 +650,7 @@ function drawHandle(
   const r = selected || draft ? 4 : 2.25;
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = draft || selected ? LINE_SEL : LINE;
+  ctx.fillStyle = draft || selected ? LINE_SEL : DEFAULT_DRAWING_COLOR;
   ctx.fill();
   if (selected) {
     ctx.strokeStyle = 'rgba(10,12,16,0.9)';
@@ -441,43 +667,44 @@ function drawHandle(
 function drawHLine(
   ctx: CanvasRenderingContext2D,
   series: ISeriesApi<'Candlestick'>,
-  price: number,
+  d: HorizontalDrawing,
   plotW: number,
   _paneH: number,
   selected: boolean,
 ): void {
-  const y = series.priceToCoordinate(price);
+  const y = series.priceToCoordinate(d.price);
   if (y == null || !Number.isFinite(y)) return;
+  const span = hlineSpan(plotW, d.extendLeft, d.extendRight);
 
   ctx.save();
-  ctx.strokeStyle = selected ? LINE_SEL : LINE;
-  ctx.globalAlpha = selected ? 1 : 0.9;
-  ctx.lineWidth = selected ? 1.35 : 1;
-  ctx.setLineDash(selected ? [] : [5, 4]);
+  ctx.strokeStyle = strokeFor(d, selected);
+  ctx.globalAlpha = selected ? 1 : 0.92;
+  ctx.lineWidth = widthFor(d, selected);
+  const fullyExtended = d.extendLeft && d.extendRight;
+  ctx.setLineDash(selected || fullyExtended ? [] : [5, 4]);
   ctx.beginPath();
-  ctx.moveTo(0, y);
-  ctx.lineTo(plotW, y);
+  ctx.moveTo(span.x0, y);
+  ctx.lineTo(span.x1, y);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Drag handles on the line when selected
   if (selected) {
-    drawHandle(ctx, 14, y, true);
-    drawHandle(ctx, Math.max(28, plotW - 48), y, true);
+    drawHandle(ctx, span.x0 + 10, y, true);
+    drawHandle(ctx, Math.max(span.x0 + 24, span.x1 - 14), y, true);
   } else {
-    ctx.fillStyle = LINE;
+    ctx.fillStyle = strokeFor(d, false);
     ctx.beginPath();
-    ctx.arc(4, y, 2, 0, Math.PI * 2);
+    ctx.arc(span.x0 + 3, y, 2, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  const label = formatDrawingPrice(price);
+  const label = formatDrawingPrice(d.price);
   ctx.font = '600 9px IBM Plex Mono, JetBrains Mono, monospace';
   const tw = ctx.measureText(label).width;
   const padX = 5;
   const boxW = tw + padX * 2;
   const boxH = 14;
-  const bx = Math.max(4, plotW - boxW - 6);
+  const bx = Math.min(Math.max(4, span.x1 - boxW - 4), Math.max(4, plotW - boxW - 6));
   const by = y - boxH / 2;
 
   ctx.fillStyle = LABEL_BG;
@@ -500,24 +727,35 @@ function drawTrend(
   d: TrendDrawing,
   selected: boolean,
   draft = false,
+  paneH = 800,
 ): void {
   const c = coordsForTwoPoint(chart, series, d.t1, d.p1, d.t2, d.p2);
   if (!c) return;
-  const { x1, y1, x2, y2 } = c;
+  const plotW = chart.timeScale().width() || 0;
+  const ext = extendedSegment(
+    c.x1,
+    c.y1,
+    c.x2,
+    c.y2,
+    plotW,
+    paneH,
+    draft ? false : d.extendLeft,
+    draft ? false : d.extendRight,
+  );
 
   ctx.save();
-  ctx.strokeStyle = draft ? 'rgba(240,185,11,0.65)' : selected ? LINE_SEL : LINE;
+  ctx.strokeStyle = strokeFor(d, selected, draft);
   ctx.globalAlpha = draft ? 0.85 : 1;
-  ctx.lineWidth = selected || draft ? 1.25 : 1;
+  ctx.lineWidth = widthFor(d, selected, draft);
   ctx.setLineDash(draft ? [4, 3] : []);
   ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
+  ctx.moveTo(ext.x1, ext.y1);
+  ctx.lineTo(ext.x2, ext.y2);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  drawHandle(ctx, x1, y1, selected, draft);
-  drawHandle(ctx, x2, y2, selected, draft);
+  drawHandle(ctx, c.x1, c.y1, selected, draft);
+  drawHandle(ctx, c.x2, c.y2, selected, draft);
   ctx.restore();
 }
 
@@ -539,17 +777,16 @@ function drawRect(
   const h = Math.max(1, bot - top);
 
   ctx.save();
-  ctx.fillStyle = draft || selected ? RECT_FILL_SEL : RECT_FILL;
+  ctx.fillStyle = hexToRgba(d.color || DEFAULT_DRAWING_COLOR, draft || selected ? 0.1 : 0.06);
   ctx.fillRect(left, top, w, h);
 
-  ctx.strokeStyle = draft ? 'rgba(240,185,11,0.65)' : selected ? LINE_SEL : LINE;
+  ctx.strokeStyle = strokeFor(d, selected, draft);
   ctx.globalAlpha = draft ? 0.9 : 1;
-  ctx.lineWidth = selected || draft ? 1.25 : 1;
+  ctx.lineWidth = widthFor(d, selected, draft);
   ctx.setLineDash(draft ? [4, 3] : []);
   ctx.strokeRect(left + 0.5, top + 0.5, w - 1, h - 1);
   ctx.setLineDash([]);
 
-  // Corner handles — p1/p2 are the interactive anchors; show all 4 for polish
   for (const [cx, cy] of [
     [c.x1, c.y1],
     [c.x2, c.y2],
@@ -586,14 +823,10 @@ function drawFib(
 
   const top = Math.min(c.y1, c.y2);
   const bot = Math.max(c.y1, c.y2);
-  ctx.fillStyle = draft || selected ? 'rgba(240,185,11,0.06)' : FIB_FILL;
+  ctx.fillStyle = hexToRgba(d.color || DEFAULT_DRAWING_COLOR, draft || selected ? 0.08 : 0.04);
   ctx.fillRect(left, top, span, Math.max(1, bot - top));
 
-  ctx.strokeStyle = draft
-    ? 'rgba(240,185,11,0.45)'
-    : selected
-      ? 'rgba(240,185,11,0.45)'
-      : 'rgba(212,212,216,0.28)';
+  ctx.strokeStyle = hexToRgba(d.color || DEFAULT_DRAWING_COLOR, draft || selected ? 0.55 : 0.35);
   ctx.lineWidth = 1;
   ctx.setLineDash([3, 3]);
   ctx.beginPath();
@@ -609,15 +842,9 @@ function drawFib(
     const y = c.y1 + (c.y2 - c.y1) * level;
     const isExtreme = level === 0 || level === 1;
 
-    ctx.strokeStyle = draft
-      ? 'rgba(240,185,11,0.7)'
-      : selected
-        ? LINE_SEL
-        : isExtreme
-          ? 'rgba(212,212,216,0.7)'
-          : LINE;
-    ctx.globalAlpha = draft ? 0.9 : 1;
-    ctx.lineWidth = selected || isExtreme ? 1.15 : 1;
+    ctx.strokeStyle = strokeFor(d, selected || isExtreme, draft);
+    ctx.globalAlpha = draft ? 0.9 : isExtreme ? 1 : 0.85;
+    ctx.lineWidth = widthFor(d, selected || isExtreme, draft);
     ctx.setLineDash(draft && !isExtreme ? [4, 3] : []);
     ctx.beginPath();
     ctx.moveTo(left, y);

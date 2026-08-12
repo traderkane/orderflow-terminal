@@ -33,7 +33,7 @@ npm run preview
 
 ## Widgets
 
-1. **Chart** — TradingView/MMT-style workspace: left icon drawing rail (select / H-Line / Trend / Rect / Fib / Eraser / Clear), bottom layer dock, TF pills **1m / 5m / 15m / 1h**; drag-to-move drawings with handles; layers Heatmap / VPVR / Bubbles / VWAP / CVD / Liqs; drawings persisted per symbol
+1. **Chart** — TradingView/MMT-style workspace: left icon drawing rail (select / H-Line / Trend / Rect / Fib / Magnet / Eraser / Clear), bottom layer dock, TF pills **1m / 5m / 15m / 1h**; selected-drawing properties mini-panel (color / width / extend L-R / delete); magnet snap to candle OHLC+mid; maximize chart from header (**F** / Esc); drag-to-move drawings with handles; layers Heatmap / VPVR / Bubbles / VWAP / CVD / Liqs; drawings (+styles) persisted per symbol
 2. **Order Book / DOM** — bids/asks, depth bars, spread
 3. **Trades Tape** — scrolling aggressor buys/sells with size highlighting
 4. **Order Book Heatmap** — canvas time × price liquidity

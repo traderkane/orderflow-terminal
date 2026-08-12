@@ -98,6 +98,7 @@ interface TerminalState {
   showHeatmap: boolean;
   showProfile: boolean;
   showBubbles: boolean;
+  chartMaximized: boolean;
   launcherOpen: boolean;
   openPanel: PanelId;
 
@@ -123,6 +124,8 @@ interface TerminalState {
   setShowHeatmap: (v: boolean) => void;
   setShowProfile: (v: boolean) => void;
   setShowBubbles: (v: boolean) => void;
+  setChartMaximized: (v: boolean) => void;
+  toggleChartMaximized: () => void;
   setLauncherOpen: (v: boolean) => void;
   setOpenPanel: (panel: PanelId) => void;
 
@@ -251,6 +254,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     showHeatmap: true,
     showProfile: true,
     showBubbles: true,
+    chartMaximized: false,
     launcherOpen: false,
     openPanel: null,
 
@@ -363,6 +367,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     setShowHeatmap: (showHeatmap) => set({ showHeatmap }),
     setShowProfile: (showProfile) => set({ showProfile }),
     setShowBubbles: (showBubbles) => set({ showBubbles }),
+    setChartMaximized: (chartMaximized) => set({ chartMaximized }),
+    toggleChartMaximized: () =>
+      set((s) => ({ chartMaximized: !s.chartMaximized })),
     setLauncherOpen: (launcherOpen) => set({ launcherOpen, openPanel: launcherOpen ? null : get().openPanel }),
     setOpenPanel: (openPanel) =>
       set({ openPanel, launcherOpen: openPanel ? false : get().launcherOpen }),

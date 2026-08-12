@@ -13,7 +13,10 @@ import {
   type Time,
 } from 'lightweight-charts';
 import {
+  DRAWING_COLORS,
+  LINE_WIDTHS,
   applyDrawingDrag,
+  defaultDrawingStyle,
   deleteControlAnchor,
   drawChartDrawings,
   formatDrawingPrice,
@@ -22,9 +25,11 @@ import {
   isPlaceTool,
   isSelectTool,
   loadDrawings,
+  magnetSnap,
   newDrawingId,
   saveDrawings,
   setSymbolDrawings,
+  withDrawingDefaults,
   type ChartDrawing,
   type DrawingHit,
   type DrawingTool,
@@ -119,6 +124,7 @@ export function ChartWidget() {
   const [deletePos, setDeletePos] = useState<{ x: number; y: number } | null>(null);
   const [hoverCursor, setHoverCursor] = useState<HoverCursor>('default');
   const [priceEdit, setPriceEdit] = useState<{ id: string; value: string } | null>(null);
+  const [magnetOn, setMagnetOn] = useState(true);
 
   const toolRef = useRef<DrawingTool>('select');
   const drawingsRef = useRef<ChartDrawing[]>([]);
@@ -127,6 +133,8 @@ export function ChartWidget() {
   const dragRef = useRef<DragState | null>(null);
   const suppressClickRef = useRef(false);
   const symbolRef = useRef(useTerminalStore.getState().symbol);
+  const magnetRef = useRef(true);
+  const candlesRef = useRef<Candle[]>([]);
 
   const feed = useTerminalStore((s) => s.feed);
   const symbol = useTerminalStore((s) => s.symbol);
@@ -154,6 +162,7 @@ export function ChartWidget() {
   drawingsRef.current = drawings;
   selectedIdRef.current = selectedId;
   symbolRef.current = symbol;
+  magnetRef.current = magnetOn;
 
   const setChartInteraction = (enabled: boolean) => {
     chartRef.current?.applyOptions({
@@ -209,6 +218,19 @@ export function ChartWidget() {
       tSec = Date.now() / 1000;
     }
     return { x, y, price: Number(price), time: tSec };
+  };
+
+  const snapPoint = (
+    x: number,
+    y: number,
+    price: number,
+    time: number,
+  ): { price: number; time: number } => {
+    if (!magnetRef.current) return { price, time };
+    const chart = chartRef.current;
+    const series = candleRef.current;
+    if (!chart || !series) return { price, time };
+    return magnetSnap(chart, series, candlesRef.current, x, y, price, time);
   };
 
   const drawHeatmapLayer = (
@@ -636,7 +658,16 @@ export function ChartWidget() {
       const { x, y } = param.point;
       const price = series.coordinateToPrice(y);
       if (price == null || !Number.isFinite(Number(price))) return;
-      const priceN = Number(price);
+      let priceN = Number(price);
+      let tHint: number | null = null;
+      const tv0 = chart.timeScale().coordinateToTime(x);
+      if (typeof tv0 === 'number') tHint = tv0;
+      else if (typeof param.time === 'number') tHint = param.time;
+      if (tHint != null) {
+        const snapped = snapPoint(x, y, priceN, tHint);
+        priceN = snapped.price;
+        tHint = snapped.time;
+      }
       const active = toolRef.current;
 
       if (active === 'eraser') {
@@ -660,7 +691,14 @@ export function ChartWidget() {
       if (active === 'hline') {
         const next: ChartDrawing[] = [
           ...drawingsRef.current,
-          { id: newDrawingId(), type: 'hline', price: priceN },
+          withDrawingDefaults({
+            id: newDrawingId(),
+            type: 'hline',
+            price: priceN,
+            ...defaultDrawingStyle(),
+            extendLeft: true,
+            extendRight: true,
+          }),
         ];
         setSelectedId(null);
         selectedIdRef.current = null;
@@ -669,10 +707,12 @@ export function ChartWidget() {
       }
 
       if (active === 'trend' || active === 'rect' || active === 'fib') {
-        const timeVal = chart.timeScale().coordinateToTime(x);
-        let tSec: number | null = null;
-        if (typeof timeVal === 'number') tSec = timeVal;
-        else if (typeof param.time === 'number') tSec = param.time;
+        let tSec: number | null = tHint;
+        if (tSec == null || !Number.isFinite(tSec)) {
+          const timeVal = chart.timeScale().coordinateToTime(x);
+          if (typeof timeVal === 'number') tSec = timeVal;
+          else if (typeof param.time === 'number') tSec = param.time;
+        }
         if (tSec == null || !Number.isFinite(tSec)) return;
 
         const draft = draftRef.current;
@@ -684,16 +724,46 @@ export function ChartWidget() {
           return;
         }
 
-        const next: ChartDrawing[] = [
-          ...drawingsRef.current,
-          {
-            id: newDrawingId(),
-            type: active,
+        const style = defaultDrawingStyle();
+        const id = newDrawingId();
+        let created: ChartDrawing;
+        if (active === 'trend') {
+          created = withDrawingDefaults({
+            id,
+            type: 'trend',
             t1: draft.t1,
             p1: draft.p1,
             t2: tSec,
             p2: priceN,
-          },
+            ...style,
+            extendLeft: false,
+            extendRight: false,
+          });
+        } else if (active === 'rect') {
+          created = withDrawingDefaults({
+            id,
+            type: 'rect',
+            t1: draft.t1,
+            p1: draft.p1,
+            t2: tSec,
+            p2: priceN,
+            ...style,
+          });
+        } else {
+          created = withDrawingDefaults({
+            id,
+            type: 'fib',
+            t1: draft.t1,
+            p1: draft.p1,
+            t2: tSec,
+            p2: priceN,
+            ...style,
+          });
+        }
+
+        const next: ChartDrawing[] = [
+          ...drawingsRef.current,
+          created,
         ];
         draftRef.current = null;
         setSelectedId(null);
@@ -729,7 +799,13 @@ export function ChartWidget() {
             if (typeof timeVal === 'number') tSec = timeVal;
             else if (typeof param.time === 'number') tSec = param.time;
             if (tSec != null) {
-              draftRef.current = { ...draft, t2: tSec, p2: Number(price) };
+              const snapped = snapPoint(
+                param.point.x,
+                param.point.y,
+                Number(price),
+                tSec,
+              );
+              draftRef.current = { ...draft, t2: snapped.time, p2: snapped.price };
               scheduleOverlays();
             }
           }
@@ -809,8 +885,9 @@ export function ChartWidget() {
       if (!drag) return;
       const pt = pointFromEvent(e.clientX, e.clientY);
       if (!pt) return;
-      const priceDelta = pt.price - drag.lastPrice;
-      const timeDelta = pt.time - drag.lastTime;
+      const snapped = snapPoint(pt.x, pt.y, pt.price, pt.time);
+      const priceDelta = snapped.price - drag.lastPrice;
+      const timeDelta = snapped.time - drag.lastTime;
       if (priceDelta === 0 && timeDelta === 0) return;
 
       const next = drawingsRef.current.map((d) => {
@@ -825,8 +902,8 @@ export function ChartWidget() {
       setDrawings(next);
       dragRef.current = {
         ...drag,
-        lastPrice: pt.price,
-        lastTime: pt.time,
+        lastPrice: snapped.price,
+        lastTime: snapped.time,
       };
       scheduleOverlays();
     };
@@ -972,6 +1049,7 @@ export function ChartWidget() {
 
     heatmapRef.current = feed.heatmap ?? [];
     tradesRef.current = feed.trades ?? [];
+    candlesRef.current = feed.candles ?? [];
     profileRef.current =
       feed.volumeProfile?.length > 0
         ? feed.volumeProfile
@@ -1074,6 +1152,16 @@ export function ChartWidget() {
     persistDrawings(next);
   };
 
+  const patchSelected = (patch: Partial<ChartDrawing>) => {
+    const id = selectedIdRef.current;
+    if (!id) return;
+    const next = drawingsRef.current.map((d) => {
+      if (d.id !== id) return d;
+      return withDrawingDefaults({ ...d, ...patch } as ChartDrawing);
+    });
+    persistDrawings(next);
+  };
+
   const commitPriceEdit = () => {
     if (!priceEdit) return;
     const parsed = Number(priceEdit.value.replace(/,/g, ''));
@@ -1111,6 +1199,12 @@ export function ChartWidget() {
             : tool === 'eraser'
               ? 'Click a drawing to erase · Esc select'
               : null;
+
+  const selectedDrawing = selectedId
+    ? drawings.find((d) => d.id === selectedId) ?? null
+    : null;
+  const showExtend =
+    selectedDrawing?.type === 'hline' || selectedDrawing?.type === 'trend';
 
   return (
     <div className={`chart-workspace relative flex h-full min-h-0 ${cursorClass}`}>
@@ -1150,6 +1244,14 @@ export function ChartWidget() {
           onClick={() => selectTool('fib')}
         >
           <IconFib />
+        </ToolIcon>
+        <div className="my-0.5 h-px w-5 bg-terminal-border" />
+        <ToolIcon
+          title={magnetOn ? 'Magnet snap on' : 'Magnet snap off'}
+          active={magnetOn}
+          onClick={() => setMagnetOn((v) => !v)}
+        >
+          <IconMagnet />
         </ToolIcon>
         <div className="my-0.5 h-px w-5 bg-terminal-border" />
         <ToolIcon
@@ -1194,6 +1296,100 @@ export function ChartWidget() {
         {toolHint && (
           <div className="pointer-events-none absolute left-1/2 top-8 z-10 -translate-x-1/2 rounded-[2px] border border-terminal-border bg-black/65 px-2 py-0.5 text-[10px] uppercase tracking-wider text-zinc-400 backdrop-blur-[2px]">
             {toolHint}
+          </div>
+        )}
+
+        {selectedDrawing && !priceEdit && (
+          <div className="drawing-props-panel pointer-events-auto absolute right-2 top-1.5 z-[6] flex items-center gap-1.5 rounded-[2px] border border-terminal-border bg-black/80 px-1.5 py-1 backdrop-blur-[2px]">
+            <div className="flex items-center gap-0.5">
+              {DRAWING_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  title={`Color ${c}`}
+                  onClick={() => patchSelected({ color: c })}
+                  className={`h-3.5 w-3.5 rounded-[2px] border ${
+                    selectedDrawing.color === c
+                      ? 'border-accent ring-1 ring-accent/50'
+                      : 'border-white/10 hover:border-white/30'
+                  }`}
+                  style={{ background: c }}
+                />
+              ))}
+            </div>
+            <div className="h-3.5 w-px bg-terminal-border" />
+            <div className="flex items-center gap-0.5">
+              {LINE_WIDTHS.map((w) => (
+                <button
+                  key={w}
+                  type="button"
+                  title={`Line width ${w}`}
+                  onClick={() => patchSelected({ lineWidth: w })}
+                  className={`flex h-5 min-w-[18px] items-center justify-center rounded-[2px] px-1 font-mono text-[9px] ${
+                    selectedDrawing.lineWidth === w
+                      ? 'bg-accent/20 text-accent'
+                      : 'text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200'
+                  }`}
+                >
+                  <span
+                    className="block w-3 rounded-full bg-current"
+                    style={{ height: Math.max(1, w) }}
+                  />
+                </button>
+              ))}
+            </div>
+            {showExtend && (
+              <>
+                <div className="h-3.5 w-px bg-terminal-border" />
+                <div className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    title="Extend left"
+                    onClick={() =>
+                      patchSelected({
+                        extendLeft: !('extendLeft' in selectedDrawing
+                          ? selectedDrawing.extendLeft
+                          : false),
+                      } as Partial<ChartDrawing>)
+                    }
+                    className={`flex h-5 min-w-[22px] items-center justify-center rounded-[2px] px-1 font-mono text-[9px] uppercase ${
+                      'extendLeft' in selectedDrawing && selectedDrawing.extendLeft
+                        ? 'bg-accent/20 text-accent'
+                        : 'text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200'
+                    }`}
+                  >
+                    ←
+                  </button>
+                  <button
+                    type="button"
+                    title="Extend right"
+                    onClick={() =>
+                      patchSelected({
+                        extendRight: !('extendRight' in selectedDrawing
+                          ? selectedDrawing.extendRight
+                          : false),
+                      } as Partial<ChartDrawing>)
+                    }
+                    className={`flex h-5 min-w-[22px] items-center justify-center rounded-[2px] px-1 font-mono text-[9px] uppercase ${
+                      'extendRight' in selectedDrawing && selectedDrawing.extendRight
+                        ? 'bg-accent/20 text-accent'
+                        : 'text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200'
+                    }`}
+                  >
+                    →
+                  </button>
+                </div>
+              </>
+            )}
+            <div className="h-3.5 w-px bg-terminal-border" />
+            <button
+              type="button"
+              title="Delete drawing"
+              onClick={deleteSelected}
+              className="flex h-5 items-center justify-center rounded-[2px] px-1.5 font-mono text-[10px] text-zinc-500 hover:bg-down/10 hover:text-down"
+            >
+              Del
+            </button>
           </div>
         )}
 
@@ -1376,6 +1572,20 @@ function IconEraser() {
         strokeLinejoin="round"
       />
       <path d="M5.2 11.6H12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconMagnet() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <path
+        d="M3.5 2.5v4.2a3.5 3.5 0 007 0V2.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      <path d="M3.5 2.5h2.2v3H3.5zM8.3 2.5H10.5v3H8.3z" fill="currentColor" opacity="0.85" />
     </svg>
   );
 }
