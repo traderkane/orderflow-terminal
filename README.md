@@ -1,6 +1,6 @@
 # Flow Terminal (Orderflow)
 
-MMT-inspired browser crypto **order-flow trading terminal** with a dark multi-widget layout.
+MMT-inspired browser crypto **order-flow trading terminal** with a dark multi-widget layout and slim left app rail (Terminal / Layouts / Alerts / +Widget / theme).
 
 Data sources:
 

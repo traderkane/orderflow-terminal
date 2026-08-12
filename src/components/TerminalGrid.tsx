@@ -112,7 +112,8 @@ export function TerminalGrid() {
   return (
     <div
       ref={containerRef as RefObject<HTMLDivElement>}
-      className={`min-h-0 flex-1 overflow-auto terminal-workspace ${
+      tabIndex={-1}
+      className={`min-h-0 flex-1 overflow-auto terminal-workspace outline-none ${
         chartMaximized ? 'grid-chart-maximized' : ''
       }`}
     >

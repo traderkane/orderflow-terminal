@@ -28,12 +28,6 @@ export function TopBar() {
   const setSpeed = useTerminalStore((s) => s.setSpeed);
   const toggleFeed = useTerminalStore((s) => s.toggleFeed);
   const resetLayout = useTerminalStore((s) => s.resetLayout);
-  const setLauncherOpen = useTerminalStore((s) => s.setLauncherOpen);
-  const setOpenPanel = useTerminalStore((s) => s.setOpenPanel);
-  const openPanel = useTerminalStore((s) => s.openPanel);
-  const armedAlerts = useTerminalStore(
-    (s) => s.alerts.filter((a) => a.enabled && !a.triggered).length,
-  );
   const stats = useTerminalStore((s) => s.feed?.stats);
 
   const up = (stats?.change24h ?? 0) >= 0;
@@ -50,18 +44,6 @@ export function TopBar() {
 
   return (
     <header className="topbar flex h-8 shrink-0 items-center gap-1.5 border-b border-terminal-border bg-[#06080c] px-2">
-      {/* Mark */}
-      <div className="flex items-center gap-1.5 pr-1" title="Flow Terminal">
-        <div className="flex h-4 w-4 items-center justify-center rounded-[2px] bg-up/15 text-[10px] font-bold leading-none text-up">
-          Φ
-        </div>
-        <span className="hidden text-[11px] font-semibold tracking-wide text-zinc-300 sm:inline">
-          Flow
-        </span>
-      </div>
-
-      <div className="h-3.5 w-px shrink-0 bg-terminal-border" />
-
       {/* Dominant: symbol + last + change */}
       <div className="flex min-w-0 items-baseline gap-2">
         <SymbolPicker />
@@ -189,46 +171,6 @@ export function TopBar() {
         )}
 
         <div className="mx-1 h-3.5 w-px shrink-0 bg-terminal-border" />
-
-        <button
-          type="button"
-          onClick={() => setOpenPanel(openPanel === "alerts" ? null : "alerts")}
-          className={`relative ${
-            openPanel === "alerts"
-              ? "h-6 rounded-[2px] bg-accent/10 px-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-accent"
-              : ghostBtn
-          }`}
-          title="Price / funding / OI alerts"
-        >
-          Alerts
-          {armedAlerts > 0 && (
-            <span className="ml-1 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-accent/20 px-1 font-mono text-[9px] text-accent">
-              {armedAlerts}
-            </span>
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setOpenPanel(openPanel === "layouts" ? null : "layouts")}
-          className={
-            openPanel === "layouts"
-              ? "h-6 rounded-[2px] bg-white/[0.06] px-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-100"
-              : ghostBtn
-          }
-          title="Layout templates"
-        >
-          Layouts
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setLauncherOpen(true)}
-          className="h-6 rounded-[2px] px-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-up/90 transition-colors hover:bg-up/[0.1] hover:text-up"
-          title="Add widget"
-        >
-          + Widget
-        </button>
 
         <button
           type="button"

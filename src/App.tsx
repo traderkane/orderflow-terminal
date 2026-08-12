@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { AppRail } from './components/AppRail';
 import { TopBar } from './components/TopBar';
 import { LayoutTabs } from './components/LayoutTabs';
 import { TerminalGrid } from './components/TerminalGrid';
@@ -27,10 +28,13 @@ export default function App() {
   }, [setLauncherOpen, setOpenPanel]);
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-terminal-bg text-zinc-200">
-      <TopBar />
-      <LayoutTabs />
-      <TerminalGrid />
+    <div className="flex h-screen w-screen overflow-hidden bg-terminal-bg text-zinc-200">
+      <AppRail />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <TopBar />
+        <LayoutTabs />
+        <TerminalGrid />
+      </div>
       <WidgetLauncher />
       <AlertsDrawer />
       <LayoutsDrawer />
