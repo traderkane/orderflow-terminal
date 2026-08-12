@@ -1,7 +1,15 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
 import type { FootprintBar } from '../types/market';
 import { fmtPrice } from '../lib/format';
+import {
+  FOOTPRINT_GRADE_EVENT,
+  FOOTPRINT_GRADE_MODES,
+  footprintCellTone,
+  loadFootprintGrade,
+  persistFootprintGrade,
+  type FootprintGradeMode,
+} from '../lib/footprintGrade';
 
 const IMBALANCE_RATIO = 3;
 const MAX_BARS = 12;
@@ -24,41 +32,40 @@ function fmtTime(sec: number): string {
   });
 }
 
-function cellTone(
-  buy: number,
-  sell: number,
-  maxSide: number,
-): { buyBg: string; sellBg: string; imbalance: 'buy' | 'sell' | null } {
-  const buyA = maxSide > 0 ? 0.1 + (buy / maxSide) * 0.62 : 0.06;
-  const sellA = maxSide > 0 ? 0.1 + (sell / maxSide) * 0.62 : 0.06;
-  let imbalance: 'buy' | 'sell' | null = null;
-  if (buy > 0 && sell > 0) {
-    if (buy / sell >= IMBALANCE_RATIO) imbalance = 'buy';
-    else if (sell / buy >= IMBALANCE_RATIO) imbalance = 'sell';
-  } else if (buy > 0 && sell === 0 && buy > maxSide * 0.12) {
-    imbalance = 'buy';
-  } else if (sell > 0 && buy === 0 && sell > maxSide * 0.12) {
-    imbalance = 'sell';
-  }
-  return {
-    buyBg: `rgba(14, 203, 129, ${buyA})`,
-    sellBg: `rgba(246, 70, 93, ${sellA})`,
-    imbalance,
-  };
-}
-
 export function FootprintWidget() {
   const footprint = useTerminalStore((s) => s.feed?.footprint) ?? [];
   const last = useTerminalStore((s) => s.feed?.stats.last) ?? 0;
+  const [grade, setGrade] = useState<FootprintGradeMode>(() => loadFootprintGrade());
 
-  const { bars, prices, maxSide, barDeltas } = useMemo(() => {
+  useEffect(() => {
+    const onGrade = (e: Event) => {
+      const mode = (e as CustomEvent<FootprintGradeMode>).detail;
+      if (mode === 'volume' || mode === 'delta' || mode === 'total') {
+        setGrade(mode);
+      }
+    };
+    window.addEventListener(FOOTPRINT_GRADE_EVENT, onGrade);
+    return () => window.removeEventListener(FOOTPRINT_GRADE_EVENT, onGrade);
+  }, []);
+
+  const setGradeMode = (mode: FootprintGradeMode) => {
+    setGrade(mode);
+    persistFootprintGrade(mode);
+  };
+
+  const { bars, prices, maxSide, maxAbsDelta, maxTotal, barDeltas } = useMemo(() => {
     const bars = footprint.slice(-MAX_BARS);
     const priceSet = new Set<number>();
     let maxSide = 1;
+    let maxAbsDelta = 1;
+    let maxTotal = 1;
     for (const bar of bars) {
+      maxAbsDelta = Math.max(maxAbsDelta, Math.abs(bar.delta));
       for (const l of bar.levels) {
         priceSet.add(l.price);
         maxSide = Math.max(maxSide, l.buyVolume, l.sellVolume);
+        maxAbsDelta = Math.max(maxAbsDelta, Math.abs(l.delta));
+        maxTotal = Math.max(maxTotal, l.buyVolume + l.sellVolume);
       }
     }
     let prices = [...priceSet].sort((a, b) => b - a);
@@ -74,7 +81,7 @@ export function FootprintWidget() {
       prices = prices.slice(Math.max(0, mid - half), mid - half + MAX_ROWS);
     }
     const barDeltas = bars.map((b) => b.delta);
-    return { bars, prices, maxSide, barDeltas };
+    return { bars, prices, maxSide, maxAbsDelta, maxTotal, barDeltas };
   }, [footprint, last]);
 
   if (!bars.length || !prices.length) {
@@ -86,12 +93,34 @@ export function FootprintWidget() {
   const lookup = (bar: FootprintBar, price: number) =>
     bar.levels.find((l) => l.price === price);
 
+  const gradeHint =
+    FOOTPRINT_GRADE_MODES.find((m) => m.id === grade)?.hint ?? 'Volume grading';
+
   return (
     <div className="flex h-full flex-col overflow-hidden font-mono text-[9px] leading-[1.05]">
-      <div className="flex items-center justify-between border-b border-terminal-border/60 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em] text-terminal-label">
-        <span>Detail · sell | buy · 1m</span>
-        <span className="normal-case tracking-normal text-zinc-500" title="Side table stays on 1m; use Chart → Footprint mode for TF-aligned clusters">
-          imb ≥ {IMBALANCE_RATIO}:1 · chart has FP mode
+      <div className="dom-toolbar flex shrink-0 flex-wrap items-center gap-1 border-b border-terminal-border/60 px-1 py-0.5">
+        <span className="px-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] text-terminal-label">
+          FP · 1m
+        </span>
+        <div className="dom-seg" role="group" aria-label="Footprint grading">
+          {FOOTPRINT_GRADE_MODES.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              className="dom-seg-btn"
+              data-active={grade === m.id ? 'true' : 'false'}
+              title={m.hint}
+              onClick={() => setGradeMode(m.id)}
+            >
+              {m.short}
+            </button>
+          ))}
+        </div>
+        <span
+          className="ml-auto hidden text-[8px] uppercase tracking-[0.08em] text-zinc-600 sm:inline"
+          title="Side table stays on 1m; use Chart → Footprint mode for TF-aligned clusters"
+        >
+          imb ≥{IMBALANCE_RATIO}:1
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-0.5 pb-0.5">
@@ -142,7 +171,14 @@ export function FootprintWidget() {
                         </td>
                       );
                     }
-                    const tone = cellTone(cell.buyVolume, cell.sellVolume, maxSide);
+                    const tone = footprintCellTone(
+                      grade,
+                      cell.buyVolume,
+                      cell.sellVolume,
+                      maxSide,
+                      maxAbsDelta,
+                      maxTotal,
+                    );
                     const ring =
                       tone.imbalance === 'buy'
                         ? 'inset 0 0 0 1px rgba(14,203,129,0.9)'
@@ -181,7 +217,9 @@ export function FootprintWidget() {
         <span>
           <span className="text-down">sell</span> | <span className="text-up">buy</span>
         </span>
-        <span className="text-zinc-500">outline = imbalance</span>
+        <span className="truncate text-zinc-500" title={gradeHint}>
+          {grade} · outline = imbalance
+        </span>
       </div>
     </div>
   );

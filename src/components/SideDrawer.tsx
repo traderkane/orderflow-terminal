@@ -24,7 +24,7 @@ export function SideDrawer({
 }: SideDrawerProps) {
   return (
     <div
-      className={`fixed inset-y-0 left-10 right-0 z-40 ${
+      className={`fixed inset-y-0 left-9 right-0 z-40 ${
         open ? 'pointer-events-auto' : 'pointer-events-none'
       }`}
       aria-hidden={!open}
@@ -46,9 +46,9 @@ export function SideDrawer({
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        <header className="flex min-h-8 shrink-0 items-center justify-between gap-2 border-b border-terminal-border px-2.5 py-1.5">
+        <header className="flex min-h-7 shrink-0 items-center justify-between gap-2 border-b border-terminal-border px-2 py-1">
           <div className="min-w-0 flex-1">
-            <div className="truncate font-mono text-[10px] font-medium uppercase tracking-[0.14em]">
+            <div className="truncate font-mono text-[10px] font-medium uppercase tracking-[0.1em]">
               {title}
             </div>
             {subtitle && (
@@ -74,16 +74,16 @@ export function SideDrawer({
 }
 
 export const drawerSectionLabel =
-  'px-2.5 pt-2.5 pb-1 font-mono text-[9px] font-medium uppercase tracking-[0.14em] text-terminal-label';
+  'px-2.5 pt-2.5 pb-1 font-mono text-[9px] font-medium uppercase tracking-[0.1em] text-terminal-label';
 
 export const drawerField =
-  'h-6 min-w-0 rounded-[2px] border border-terminal-border bg-terminal-header px-1.5 font-mono text-[10px] outline-none placeholder:text-terminal-label focus:border-terminal-border-strong';
+  'chrome-input h-6 min-w-0 rounded-[2px] border border-terminal-border bg-terminal-header px-1.5 font-mono text-[10px] outline-none placeholder:text-terminal-label';
 
 export const drawerGhostBtn =
   'h-6 shrink-0 rounded-[2px] px-1.5 font-mono text-[9px] font-medium uppercase tracking-[0.12em] text-terminal-muted transition-colors hover:bg-white/[0.04] hover:text-zinc-200 disabled:opacity-35';
 
 export const drawerPrimaryBtn =
-  'h-6 shrink-0 rounded-[2px] bg-up/[0.12] px-2 font-mono text-[9px] font-medium uppercase tracking-[0.12em] text-up transition-colors hover:bg-up/20 disabled:opacity-35';
+  'h-6 shrink-0 rounded-[2px] bg-accent/[0.12] px-2 font-mono text-[9px] font-medium uppercase tracking-[0.1em] text-accent transition-colors hover:bg-accent/20 disabled:opacity-35';
 
 export const drawerEmpty =
   'px-2.5 py-3 text-center font-mono text-[10px] leading-relaxed text-terminal-muted';

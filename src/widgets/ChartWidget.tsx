@@ -16,19 +16,27 @@ import {
 } from 'lightweight-charts';
 import {
   DRAWING_COLORS,
+  FIB_TOGGLE_LEVELS,
   LINE_WIDTHS,
+  MAGNET_PX,
+  activeFibLevels,
   applyDrawingDrag,
   defaultDrawingStyle,
   deleteControlAnchor,
   drawChartDrawings,
+  drawMagnetPreview,
+  drawingTypeLabel,
+  drawingTypeShort,
   formatDrawingPrice,
   getSymbolDrawings,
   hitTestDrawingDetailed,
+  isDrawingVisible,
   isPlaceTool,
   isSelectTool,
   loadDrawings,
   magnetSnap,
   newDrawingId,
+  normalizeFibLevels,
   saveDrawings,
   setSymbolDrawings,
   withDrawingDefaults,
@@ -65,6 +73,24 @@ import {
   formatFootprintVol,
   stackedImbalanceKey,
 } from '../data/footprint';
+import {
+  HEATMAP_COLORMAPS,
+  heatmapCellColor,
+  loadHeatmapCraft,
+  patchHeatmapCraft,
+  peakPercentile,
+  rebinHeatLevels,
+  splatBlend,
+  type HeatmapCraftPrefs,
+} from '../lib/heatmapCraft';
+import {
+  FOOTPRINT_GRADE_EVENT,
+  FOOTPRINT_GRADE_MODES,
+  footprintCellAlphas,
+  loadFootprintGrade,
+  persistFootprintGrade,
+  type FootprintGradeMode,
+} from '../lib/footprintGrade';
 import { useTerminalStore } from '../store/useTerminalStore';
 import type {
   Candle,
@@ -164,9 +190,43 @@ export function ChartWidget() {
   const [hoverCursor, setHoverCursor] = useState<HoverCursor>('default');
   const [priceEdit, setPriceEdit] = useState<{ id: string; value: string } | null>(null);
   const [magnetOn, setMagnetOn] = useState(true);
+  const [objectTreeOpen, setObjectTreeOpen] = useState(false);
   const [vwapMenuOpen, setVwapMenuOpen] = useState(false);
   const [barStatsMenuOpen, setBarStatsMenuOpen] = useState(false);
   const [layersMenuOpen, setLayersMenuOpen] = useState(false);
+  const [heatmapMenuOpen, setHeatmapMenuOpen] = useState(false);
+  const [heatmapCraft, setHeatmapCraft] = useState<HeatmapCraftPrefs>(() =>
+    loadHeatmapCraft(),
+  );
+  const heatmapCraftRef = useRef<HeatmapCraftPrefs>(heatmapCraft);
+  heatmapCraftRef.current = heatmapCraft;
+
+  const [footprintGrade, setFootprintGrade] = useState<FootprintGradeMode>(() =>
+    loadFootprintGrade(),
+  );
+  const footprintGradeRef = useRef<FootprintGradeMode>(footprintGrade);
+  footprintGradeRef.current = footprintGrade;
+
+  useEffect(() => {
+    const onGrade = (e: Event) => {
+      const mode = (e as CustomEvent<FootprintGradeMode>).detail;
+      if (mode === 'volume' || mode === 'delta' || mode === 'total') {
+        setFootprintGrade(mode);
+      }
+    };
+    window.addEventListener(FOOTPRINT_GRADE_EVENT, onGrade);
+    return () => window.removeEventListener(FOOTPRINT_GRADE_EVENT, onGrade);
+  }, []);
+
+  const setFootprintGradeMode = (mode: FootprintGradeMode) => {
+    setFootprintGrade(mode);
+    persistFootprintGrade(mode);
+  };
+
+  const updateHeatmapCraft = (partial: Partial<HeatmapCraftPrefs>) => {
+    const next = patchHeatmapCraft(partial);
+    setHeatmapCraft(next);
+  };
 
   const toolRef = useRef<DrawingTool>('select');
   const drawingsRef = useRef<ChartDrawing[]>([]);
@@ -176,6 +236,11 @@ export function ChartWidget() {
   const suppressClickRef = useRef(false);
   const symbolRef = useRef(useTerminalStore.getState().symbol);
   const magnetRef = useRef(true);
+  const magnetPreviewRef = useRef<{
+    x: number;
+    y: number;
+    snapped: boolean;
+  } | null>(null);
   const candlesRef = useRef<Candle[]>([]);
   const hoverPriceLineRef = useRef<IPriceLine | null>(null);
   const focusPriceLineRef = useRef<IPriceLine | null>(null);
@@ -293,6 +358,56 @@ export function ChartWidget() {
     return magnetSnap(chart, series, candlesRef.current, x, y, price, time);
   };
 
+  const updateMagnetPreview = (
+    x: number,
+    y: number,
+    price: number,
+    time: number,
+  ) => {
+    if (!magnetRef.current) {
+      if (magnetPreviewRef.current) {
+        magnetPreviewRef.current = null;
+        scheduleOverlays();
+      }
+      return;
+    }
+    const chart = chartRef.current;
+    const series = candleRef.current;
+    if (!chart || !series) return;
+    const snapped = magnetSnap(
+      chart,
+      series,
+      candlesRef.current,
+      x,
+      y,
+      price,
+      time,
+      MAGNET_PX,
+    );
+    const didSnap = snapped.price !== price || snapped.time !== time;
+    let sx = x;
+    let sy = y;
+    if (didSnap) {
+      const cx = chart.timeScale().timeToCoordinate(Math.floor(snapped.time) as Time);
+      const cy = series.priceToCoordinate(snapped.price);
+      if (cx != null && cy != null && Number.isFinite(cx) && Number.isFinite(cy)) {
+        sx = cx;
+        sy = cy;
+      }
+    }
+    const prev = magnetPreviewRef.current;
+    if (
+      prev &&
+      Math.abs(prev.x - sx) < 0.5 &&
+      Math.abs(prev.y - sy) < 0.5 &&
+      prev.snapped === didSnap
+    ) {
+      return;
+    }
+    magnetPreviewRef.current = { x: sx, y: sy, snapped: didSnap };
+    scheduleOverlays();
+  };
+
   const drawHeatmapLayer = (
     ctx: CanvasRenderingContext2D,
     chart: IChartApi,
@@ -302,6 +417,7 @@ export function ChartWidget() {
     const frames = heatmapRef.current;
     if (!frames.length) return;
 
+    const craft = heatmapCraftRef.current;
     const recent = frames.slice(-180);
     const timeScale = chart.timeScale();
     const plotW = Math.max(1, timeScale.width() || w);
@@ -310,39 +426,69 @@ export function ChartWidget() {
       timeScale.timeToCoordinate(Math.floor(frameTimeSec(f.time)) as Time),
     );
     const validXs = xMapped.filter((x): x is number => x != null && Number.isFinite(x));
-    let useStretch = validXs.length < 2;
+    // Extend-live: stretch trail to the right edge when mapped span is thin / empty.
+    // Off: prefer true time mapping only (no live right-edge crawl).
+    let useStretch = craft.extendLive && validXs.length < 2;
     let x0 = 0;
     let x1 = plotW;
-    if (!useStretch) {
+    if (validXs.length >= 2) {
       x0 = Math.min(...validXs);
       x1 = Math.max(...validXs);
-      // Heatmap frames are ~5 Hz — clock span collapses vs candle width.
-      // Stretch across most of the plot when the mapped band is thin.
-      if (x1 - x0 < plotW * 0.42) useStretch = true;
+      if (craft.extendLive && x1 - x0 < plotW * 0.42) useStretch = true;
+      else useStretch = false;
+    } else if (!craft.extendLive) {
+      useStretch = false;
     }
 
-    // Soft peak (p95) keeps walls bright without crushing mid liquidity.
+    // Soft peak from craft.peakIntensity (p70..p99) — walls bright without crush.
     const samples: number[] = [];
     for (const frame of recent) {
-      const n = frame.prices.length;
+      const rebinned = rebinHeatLevels(
+        frame.prices,
+        frame.bids,
+        frame.asks,
+        craft.binMode,
+      );
+      const n = rebinned.prices.length;
       for (let y = 0; y < n; y++) {
-        const v = Math.max(frame.bids[y] ?? 0, frame.asks[y] ?? 0);
+        const v = Math.max(rebinned.bids[y] ?? 0, rebinned.asks[y] ?? 0);
         if (v > 0.001) samples.push(v);
       }
     }
     samples.sort((a, b) => a - b);
+    const pct = peakPercentile(craft.peakIntensity);
     const peak =
       samples.length > 0
-        ? samples[Math.min(samples.length - 1, Math.floor(samples.length * 0.95))]
+        ? samples[Math.min(samples.length - 1, Math.floor(samples.length * pct))]
         : 1;
     const invPeak = peak > 0 ? 1 / peak : 1;
+    const lowGate = Math.max(0.004, craft.lowIntensity * 0.9);
+    const isSplat = craft.style === 'splat';
+    const gamma = isSplat ? 0.62 : 0.52;
+    // Keep walls visible without washing candles / footprint clusters.
+    const alphaScale = isSplat ? 0.26 : 0.32;
+    const alphaFloor = isSplat ? 0.025 : 0.035;
 
     const stretchLeft = Math.max(8, plotW * 0.12);
-    const stretchRight = plotW - 6;
+    const stretchRight = craft.extendLive ? plotW - 6 : Math.min(plotW - 6, (x1 || plotW) + 4);
     const stretchSpan = Math.max(1, stretchRight - stretchLeft);
+
+    if (isSplat) {
+      ctx.save();
+      // Soft bloom — source-over keeps candles readable vs additive wash.
+      ctx.filter = 'blur(0.55px)';
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 0.85;
+    }
 
     for (let i = 0; i < recent.length; i++) {
       const frame = recent[i];
+      const rebinned = rebinHeatLevels(
+        frame.prices,
+        frame.bids,
+        frame.asks,
+        craft.binMode,
+      );
       let xLeft: number;
       let xRight: number;
 
@@ -370,37 +516,57 @@ export function ChartWidget() {
         xRight = x + rightGap;
       }
 
-      // Slight overlap smooths temporal seams without a single hard band.
-      const pad = Math.min(1.25, Math.max(0.35, (xRight - xLeft) * 0.15));
+      // Slight overlap smooths temporal seams; splat uses a wider pad.
+      const pad = Math.min(
+        isSplat ? 2.4 : 1.25,
+        Math.max(0.35, (xRight - xLeft) * (isSplat ? 0.28 : 0.15)),
+      );
       xLeft -= pad;
       xRight += pad;
 
       const cellW = Math.max(1, xRight - xLeft);
-      const levels = frame.prices.length;
+      const levels = rebinned.prices.length;
       if (levels < 2) continue;
 
-      // Precompute y coords once per frame for vertical interpolation.
       const yCoords: Array<number | null> = new Array(levels);
       for (let y = 0; y < levels; y++) {
-        const yc = series.priceToCoordinate(frame.prices[y]);
+        const yc = series.priceToCoordinate(rebinned.prices[y]);
         yCoords[y] = yc != null && Number.isFinite(yc) ? yc : null;
       }
 
       for (let y = 0; y < levels; y++) {
-        const bid = frame.bids[y] ?? 0;
-        const ask = frame.asks[y] ?? 0;
-        // Blend neighbors for smoother book walls (less single-row look).
-        const bidN =
-          bid * 0.55 +
-          (frame.bids[y - 1] ?? bid) * 0.225 +
-          (frame.bids[y + 1] ?? bid) * 0.225;
-        const askN =
-          ask * 0.55 +
-          (frame.asks[y - 1] ?? ask) * 0.225 +
-          (frame.asks[y + 1] ?? ask) * 0.225;
+        const bid = rebinned.bids[y] ?? 0;
+        const ask = rebinned.asks[y] ?? 0;
+        let bidN: number;
+        let askN: number;
+        if (isSplat) {
+          bidN = splatBlend(
+            bid,
+            rebinned.bids[y - 1] ?? bid,
+            rebinned.bids[y + 1] ?? bid,
+            rebinned.bids[y - 2] ?? bid,
+            rebinned.bids[y + 2] ?? bid,
+          );
+          askN = splatBlend(
+            ask,
+            rebinned.asks[y - 1] ?? ask,
+            rebinned.asks[y + 1] ?? ask,
+            rebinned.asks[y - 2] ?? ask,
+            rebinned.asks[y + 2] ?? ask,
+          );
+        } else {
+          bidN =
+            bid * 0.55 +
+            (rebinned.bids[y - 1] ?? bid) * 0.225 +
+            (rebinned.bids[y + 1] ?? bid) * 0.225;
+          askN =
+            ask * 0.55 +
+            (rebinned.asks[y - 1] ?? ask) * 0.225 +
+            (rebinned.asks[y + 1] ?? ask) * 0.225;
+        }
         const rawBid = Math.min(1.35, bidN * invPeak);
         const rawAsk = Math.min(1.35, askN * invPeak);
-        if (rawBid < 0.018 && rawAsk < 0.018) continue;
+        if (rawBid < lowGate && rawAsk < lowGate) continue;
 
         const yCoord = yCoords[y];
         if (yCoord == null) continue;
@@ -420,51 +586,46 @@ export function ChartWidget() {
           continue;
         }
 
-        const cellH = Math.max(1, yBot - yTop);
-        const bidI = Math.min(1, Math.pow(rawBid, 0.48));
-        const askI = Math.min(1, Math.pow(rawAsk, 0.48));
+        // Splat expands cells slightly for a blurrier wall.
+        if (isSplat) {
+          const inflate = Math.max(0.4, (yBot - yTop) * 0.2);
+          yTop -= inflate;
+          yBot += inflate;
+        }
 
-        // Paint both sides when present — dual-tone walls, not max-only bands.
-        if (bidI >= askI && bidI > 0.02) {
-          const alpha = 0.07 + bidI * 0.52;
-          ctx.fillStyle = `rgba(14, 203, 129, ${alpha})`;
+        const cellH = Math.max(1, yBot - yTop);
+        const bidI = Math.min(1, Math.pow(Math.max(0, rawBid), gamma));
+        const askI = Math.min(1, Math.pow(Math.max(0, rawAsk), gamma));
+        if (bidI < craft.lowIntensity && askI < craft.lowIntensity) continue;
+
+        const paint = (side: 'bid' | 'ask', intensity: number, aMul: number) => {
+          if (intensity < craft.lowIntensity) return;
+          const alpha = (alphaFloor + intensity * alphaScale) * aMul;
+          ctx.fillStyle = heatmapCellColor(
+            craft.colormap,
+            side,
+            intensity,
+            alpha,
+          );
           ctx.fillRect(
             Math.floor(xLeft),
             Math.floor(yTop),
             Math.ceil(cellW) + 1,
             Math.ceil(cellH) + 1,
           );
-          if (askI > 0.08) {
-            ctx.fillStyle = `rgba(246, 70, 93, ${0.04 + askI * 0.22})`;
-            ctx.fillRect(
-              Math.floor(xLeft),
-              Math.floor(yTop),
-              Math.ceil(cellW) + 1,
-              Math.ceil(cellH) + 1,
-            );
-          }
-        } else if (askI > 0.02) {
-          const alpha = 0.07 + askI * 0.52;
-          ctx.fillStyle = `rgba(246, 70, 93, ${alpha})`;
-          ctx.fillRect(
-            Math.floor(xLeft),
-            Math.floor(yTop),
-            Math.ceil(cellW) + 1,
-            Math.ceil(cellH) + 1,
-          );
-          if (bidI > 0.08) {
-            ctx.fillStyle = `rgba(14, 203, 129, ${0.04 + bidI * 0.22})`;
-            ctx.fillRect(
-              Math.floor(xLeft),
-              Math.floor(yTop),
-              Math.ceil(cellW) + 1,
-              Math.ceil(cellH) + 1,
-            );
-          }
+        };
+
+        if (bidI >= askI && bidI > craft.lowIntensity) {
+          paint('bid', bidI, 1);
+          if (askI > Math.max(0.06, craft.lowIntensity)) paint('ask', askI, 0.45);
+        } else if (askI > craft.lowIntensity) {
+          paint('ask', askI, 1);
+          if (bidI > Math.max(0.06, craft.lowIntensity)) paint('bid', bidI, 0.45);
         }
       }
     }
 
+    if (isSplat) ctx.restore();
   };
 
   const drawProfileLayer = (
@@ -631,12 +792,16 @@ export function ChartWidget() {
 
     let maxSide = 1;
     let maxAbsDelta = 1;
+    let maxTotal = 1;
     for (const b of bars) {
       maxAbsDelta = Math.max(maxAbsDelta, Math.abs(b.delta));
       for (const l of b.levels) {
         maxSide = Math.max(maxSide, l.buyVolume, l.sellVolume);
+        maxAbsDelta = Math.max(maxAbsDelta, Math.abs(l.delta));
+        maxTotal = Math.max(maxTotal, l.buyVolume + l.sellVolume);
       }
     }
+    const gradeMode = footprintGradeRef.current;
 
     // Median bar gap → align footprint body to candle width.
     const xs: number[] = [];
@@ -664,12 +829,13 @@ export function ChartWidget() {
     const bodyW = Math.max(6, Math.min(barW * 0.9, barW - 1.5));
     const half = bodyW / 2;
     // Delta strip on the right when there's room (MMT-style column).
-    const showDeltaCol = bodyW >= 26;
+    const showDeltaCol = bodyW >= 30;
     const deltaColW = showDeltaCol ? Math.max(3, Math.min(6, bodyW * 0.14)) : 0;
     const clusterW = bodyW - deltaColW;
-    const showText = bodyW >= 22;
-    const showCompact = bodyW >= 14 && !showText;
-    const fontPx = bodyW >= 36 ? 10 : bodyW >= 28 ? 9 : 8;
+    // At 1m / tight spacing, volume glyphs mush — hide until half-cells fit digits.
+    const showText = bodyW >= 34 && clusterW >= 28;
+    const showCompact = bodyW >= 16 && !showText;
+    const fontPx = bodyW >= 44 ? 10 : bodyW >= 36 ? 9 : 8;
     const minCellH = showText ? 7 : 2.5;
 
     const stepGuess = footprintStep(symbolRef.current) || (
@@ -752,10 +918,14 @@ export function ChartWidget() {
         h = Math.max(minCellH, Math.min(h, maxH));
         const yTop = y - h / 2;
 
-        const buyA =
-          maxSide > 0 ? 0.14 + (lvl.buyVolume / maxSide) * 0.62 : 0.1;
-        const sellA =
-          maxSide > 0 ? 0.14 + (lvl.sellVolume / maxSide) * 0.62 : 0.1;
+        const { buyA, sellA } = footprintCellAlphas(
+          gradeMode,
+          lvl.buyVolume,
+          lvl.sellVolume,
+          maxSide,
+          maxAbsDelta,
+          maxTotal,
+        );
         const midX = x0 + clusterW / 2;
         const halfCluster = clusterW / 2;
 
@@ -828,21 +998,18 @@ export function ChartWidget() {
           ctx.fillRect(x0 + clusterW + 0.5, yTop, deltaColW - 0.5, h);
         }
 
-        if (showText && h >= 8) {
+        // Volume glyphs only when they fit; imbalance strokes + POC stay at all LODs.
+        if (showText && h >= 9 && halfCluster >= 12) {
           const useFont = h >= 12 ? fontPx : Math.max(7, fontPx - 1);
           ctx.font = `600 ${useFont}px IBM Plex Mono, JetBrains Mono, monospace`;
           ctx.textBaseline = 'middle';
           const sellLabel = formatFootprintVol(lvl.sellVolume);
           const buyLabel = formatFootprintVol(lvl.buyVolume);
-          // Clip labels into half-cells for zoom fidelity
           if (sellLabel) {
             ctx.fillStyle = imb === 'sell' ? 'rgba(254, 202, 202, 1)' : 'rgba(252, 165, 165, 0.95)';
             ctx.textAlign = 'right';
             const tw = ctx.measureText(sellLabel).width;
             if (tw <= halfCluster - 3) {
-              ctx.fillText(sellLabel, midX - 2, y + 0.5);
-            } else if (halfCluster >= 10) {
-              ctx.font = `600 ${Math.max(7, useFont - 1)}px IBM Plex Mono, JetBrains Mono, monospace`;
               ctx.fillText(sellLabel, midX - 2, y + 0.5);
             }
           }
@@ -852,9 +1019,6 @@ export function ChartWidget() {
             ctx.textAlign = 'left';
             const tw = ctx.measureText(buyLabel).width;
             if (tw <= halfCluster - 3) {
-              ctx.fillText(buyLabel, midX + 2, y + 0.5);
-            } else if (halfCluster >= 10) {
-              ctx.font = `600 ${Math.max(7, useFont - 1)}px IBM Plex Mono, JetBrains Mono, monospace`;
               ctx.fillText(buyLabel, midX + 2, y + 0.5);
             }
           }
@@ -1011,9 +1175,9 @@ export function ChartWidget() {
     const fpMode = chartModeRef.current === 'footprint';
     if (flags.heatmap && !fpMode) drawHeatmapLayer(ctx, chart, series, w);
     else if (flags.heatmap && fpMode) {
-      // Dimmer heatmap under footprint clusters
+      // Dimmer heatmap under footprint clusters — leave clusters readable
       ctx.save();
-      ctx.globalAlpha = 0.45;
+      ctx.globalAlpha = 0.28;
       drawHeatmapLayer(ctx, chart, series, w);
       ctx.restore();
     }
@@ -1031,6 +1195,10 @@ export function ChartWidget() {
       selectedIdRef.current,
       draftRef.current,
     );
+    const mag = magnetPreviewRef.current;
+    if (mag && magnetRef.current) {
+      drawMagnetPreview(ctx, mag.x, mag.y, mag.snapped, MAGNET_PX);
+    }
     updateDeletePos();
   };
 
@@ -1226,6 +1394,30 @@ export function ChartWidget() {
         return;
       }
 
+      if (active === 'hray') {
+        let tSec: number | null = tHint;
+        if (tSec == null || !Number.isFinite(tSec)) {
+          const timeVal = chart.timeScale().coordinateToTime(x);
+          if (typeof timeVal === 'number') tSec = timeVal;
+          else if (typeof param.time === 'number') tSec = param.time;
+        }
+        if (tSec == null || !Number.isFinite(tSec)) return;
+        const next: ChartDrawing[] = [
+          ...drawingsRef.current,
+          withDrawingDefaults({
+            id: newDrawingId(),
+            type: 'hray',
+            price: priceN,
+            t1: tSec,
+            ...defaultDrawingStyle(),
+          }),
+        ];
+        setSelectedId(null);
+        selectedIdRef.current = null;
+        persistDrawings(next);
+        return;
+      }
+
       if (active === 'trend' || active === 'rect' || active === 'fib') {
         let tSec: number | null = tHint;
         if (tSec == null || !Number.isFinite(tSec)) {
@@ -1326,9 +1518,43 @@ export function ChartWidget() {
                 tSec,
               );
               draftRef.current = { ...draft, t2: snapped.time, p2: snapped.price };
+              updateMagnetPreview(
+                param.point.x,
+                param.point.y,
+                Number(price),
+                tSec,
+              );
               scheduleOverlays();
             }
           }
+        }
+      } else if (
+        param.point &&
+        magnetRef.current &&
+        (isPlaceTool(toolRef.current) || dragRef.current)
+      ) {
+        const seriesMag = candleRef.current;
+        if (seriesMag) {
+          const raw = seriesMag.coordinateToPrice(param.point.y);
+          if (raw != null && Number.isFinite(Number(raw))) {
+            let tSec: number | null = null;
+            const timeVal = chart.timeScale().coordinateToTime(param.point.x);
+            if (typeof timeVal === 'number') tSec = timeVal;
+            else if (typeof param.time === 'number') tSec = param.time;
+            if (tSec != null) {
+              updateMagnetPreview(
+                param.point.x,
+                param.point.y,
+                Number(raw),
+                tSec,
+              );
+            }
+          }
+        }
+      } else if (!param.point || !magnetRef.current) {
+        if (magnetPreviewRef.current) {
+          magnetPreviewRef.current = null;
+          scheduleOverlays();
         }
       }
 
@@ -1435,8 +1661,11 @@ export function ChartWidget() {
 
       const next = drawingsRef.current.map((d) => {
         if (d.id !== drag.id) return d;
-        // Horizontals only move in price
+        // Full horizontals only move in price; rays can slide anchor in time on p1
         if (d.type === 'hline') {
+          return applyDrawingDrag(d, 'body', priceDelta, 0);
+        }
+        if (d.type === 'hray' && drag.handle === 'body') {
           return applyDrawingDrag(d, 'body', priceDelta, 0);
         }
         return applyDrawingDrag(d, drag.handle, priceDelta, timeDelta);
@@ -1448,6 +1677,7 @@ export function ChartWidget() {
         lastPrice: snapped.price,
         lastTime: snapped.time,
       };
+      updateMagnetPreview(pt.x, pt.y, pt.price, pt.time);
       scheduleOverlays();
     };
 
@@ -1482,7 +1712,12 @@ export function ChartWidget() {
         pt.y,
         selectedIdRef.current,
       );
-      if (!hit || hit.drawing.type !== 'hline') return;
+      if (
+        !hit ||
+        (hit.drawing.type !== 'hline' && hit.drawing.type !== 'hray')
+      ) {
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       selectedIdRef.current = hit.drawing.id;
@@ -1743,13 +1978,25 @@ export function ChartWidget() {
   ]);
 
   useEffect(() => {
-    if (!vwapMenuOpen && !barStatsMenuOpen && !layersMenuOpen) return;
+    if (
+      !vwapMenuOpen &&
+      !barStatsMenuOpen &&
+      !layersMenuOpen &&
+      !heatmapMenuOpen &&
+      !objectTreeOpen
+    ) {
+      return;
+    }
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null;
       if (t?.closest('[data-layer-menus]')) return;
+      if (t?.closest('[data-object-tree]')) return;
+      if (t?.closest('.chart-draw-rail')) return;
       setVwapMenuOpen(false);
       setBarStatsMenuOpen(false);
       setLayersMenuOpen(false);
+      setHeatmapMenuOpen(false);
+      setObjectTreeOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -1758,6 +2005,8 @@ export function ChartWidget() {
         setVwapMenuOpen(false);
         setBarStatsMenuOpen(false);
         setLayersMenuOpen(false);
+        setHeatmapMenuOpen(false);
+        setObjectTreeOpen(false);
       }
     };
     window.addEventListener('mousedown', onDown);
@@ -1766,7 +2015,7 @@ export function ChartWidget() {
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('keydown', onKey, true);
     };
-  }, [vwapMenuOpen, barStatsMenuOpen, layersMenuOpen]);
+  }, [vwapMenuOpen, barStatsMenuOpen, layersMenuOpen, heatmapMenuOpen, objectTreeOpen]);
 
   useEffect(() => {
     scheduleOverlays();
@@ -1777,7 +2026,7 @@ export function ChartWidget() {
     else if (tool === 'eraser') setHoverCursor('pointer');
     else if (!dragRef.current) setHoverCursor('default');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showHeatmap, showProfile, showBubbles, selectedId, drawings, tool, chartMode]);
+  }, [showHeatmap, showProfile, showBubbles, selectedId, drawings, tool, chartMode, heatmapCraft, footprintGrade]);
 
   useEffect(() => {
     const candles = candleRef.current;
@@ -1903,7 +2152,9 @@ export function ChartWidget() {
       return;
     }
     const next = drawingsRef.current.map((d) =>
-      d.id === priceEdit.id && d.type === 'hline' ? { ...d, price: parsed } : d,
+      d.id === priceEdit.id && (d.type === 'hline' || d.type === 'hray')
+        ? { ...d, price: parsed }
+        : d,
     );
     setPriceEdit(null);
     persistDrawings(next);
@@ -1923,21 +2174,27 @@ export function ChartWidget() {
   const toolHint =
     tool === 'hline'
       ? 'Click to place horizontal'
-      : tool === 'trend'
-        ? 'Trend — click start, then end · Esc select'
-        : tool === 'rect'
-          ? 'Rect — click opposite corners · Esc select'
-          : tool === 'fib'
-            ? 'Fib — click 0, then 1 · Esc select'
-            : tool === 'eraser'
-              ? 'Click a drawing to erase · Esc select'
-              : null;
+      : tool === 'hray'
+        ? 'Click to place horizontal ray →'
+        : tool === 'trend'
+          ? 'Trend — click start, then end · Esc select'
+          : tool === 'rect'
+            ? 'Rect — click opposite corners · Esc select'
+            : tool === 'fib'
+              ? 'Fib — click 0, then 1 · Esc select'
+              : tool === 'eraser'
+                ? 'Click a drawing to erase · Esc select'
+                : null;
 
   const selectedDrawing = selectedId
     ? drawings.find((d) => d.id === selectedId) ?? null
     : null;
   const showExtend =
     selectedDrawing?.type === 'hline' || selectedDrawing?.type === 'trend';
+  const showFibProps = selectedDrawing?.type === 'fib';
+  const selectedVisible = selectedDrawing
+    ? isDrawingVisible(selectedDrawing)
+    : true;
 
   const layersExtraCount =
     (showProfile ? 1 : 0) +
@@ -1965,6 +2222,13 @@ export function ChartWidget() {
           <IconHLine />
         </ToolIcon>
         <ToolIcon
+          title="Horizontal ray — extends right"
+          active={tool === 'hray'}
+          onClick={() => selectTool('hray')}
+        >
+          <IconHRay />
+        </ToolIcon>
+        <ToolIcon
           title="Trend line — two clicks"
           active={tool === 'trend'}
           onClick={() => selectTool('trend')}
@@ -1989,7 +2253,15 @@ export function ChartWidget() {
         <ToolIcon
           title={magnetOn ? 'Magnet snap on' : 'Magnet snap off'}
           active={magnetOn}
-          onClick={() => setMagnetOn((v) => !v)}
+          onClick={() => {
+            setMagnetOn((v) => {
+              const next = !v;
+              magnetRef.current = next;
+              if (!next) magnetPreviewRef.current = null;
+              return next;
+            });
+            scheduleOverlays();
+          }}
         >
           <IconMagnet />
         </ToolIcon>
@@ -2004,9 +2276,129 @@ export function ChartWidget() {
         <ToolIcon title="Clear all drawings" active={false} danger onClick={clearAllDrawings}>
           <IconClear />
         </ToolIcon>
+        <div className="my-0.5 h-px w-5 bg-terminal-border" />
+        <ToolIcon
+          title="Object tree — drawings"
+          active={objectTreeOpen}
+          onClick={() => {
+            setObjectTreeOpen((v) => !v);
+            setVwapMenuOpen(false);
+            setBarStatsMenuOpen(false);
+            setLayersMenuOpen(false);
+            setHeatmapMenuOpen(false);
+          }}
+        >
+          <IconObjectTree />
+        </ToolIcon>
       </aside>
 
       <div className="relative min-h-0 min-w-0 flex-1">
+        {objectTreeOpen && (
+          <div
+            data-object-tree
+            className="pointer-events-auto absolute left-1.5 top-9 z-[8] w-[200px] rounded-[2px] border border-terminal-border bg-black/92 p-1 shadow-panel backdrop-blur-[2px]"
+          >
+            <div className="flex items-center gap-1.5 px-1.5 pb-1 pt-0.5">
+              <IconObjectTree />
+              <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">
+                Objects
+              </span>
+              <span className="ml-auto font-mono text-[9px] text-zinc-600">
+                {drawings.length}
+              </span>
+            </div>
+            {drawings.length === 0 ? (
+              <div className="px-1.5 py-2 font-mono text-[10px] text-zinc-600">
+                No drawings
+              </div>
+            ) : (
+              <div className="max-h-[220px] overflow-y-auto">
+                {[...drawings].reverse().map((d) => {
+                  const on = d.id === selectedId;
+                  const vis = isDrawingVisible(d);
+                  const summary =
+                    d.type === 'hline' || d.type === 'hray'
+                      ? formatDrawingPrice(d.price)
+                      : d.type === 'fib'
+                        ? `${activeFibLevels(d).length} lvl`
+                        : drawingTypeLabel(d);
+                  return (
+                    <div
+                      key={d.id}
+                      className={`mb-0.5 flex items-center gap-0.5 rounded-[2px] ${
+                        on ? 'bg-accent/15 ring-1 ring-inset ring-accent/35' : 'hover:bg-white/[0.04]'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        title={`Select ${drawingTypeLabel(d)}`}
+                        onClick={() => {
+                          selectedIdRef.current = d.id;
+                          setSelectedId(d.id);
+                          setTool('select');
+                          toolRef.current = 'select';
+                          scheduleOverlays();
+                        }}
+                        className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1 text-left"
+                      >
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{ background: d.color, opacity: vis ? 1 : 0.35 }}
+                        />
+                        <span
+                          className={`shrink-0 font-mono text-[9px] uppercase tracking-wider ${
+                            on ? 'text-accent' : 'text-zinc-400'
+                          }`}
+                        >
+                          {drawingTypeShort(d)}
+                        </span>
+                        <span
+                          className={`truncate font-mono text-[10px] ${
+                            vis ? 'text-zinc-300' : 'text-zinc-600 line-through'
+                          }`}
+                        >
+                          {summary}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        title={vis ? 'Hide' : 'Show'}
+                        onClick={() => {
+                          const next = drawingsRef.current.map((x) =>
+                            x.id === d.id
+                              ? withDrawingDefaults({ ...x, visible: !vis })
+                              : x,
+                          );
+                          persistDrawings(next);
+                        }}
+                        className={`flex h-5 w-5 items-center justify-center rounded-[2px] ${
+                          vis ? 'text-accent' : 'text-zinc-600'
+                        }`}
+                      >
+                        <IconEye open={vis} />
+                      </button>
+                      <button
+                        type="button"
+                        title="Delete"
+                        onClick={() => {
+                          const next = drawingsRef.current.filter((x) => x.id !== d.id);
+                          if (selectedIdRef.current === d.id) {
+                            selectedIdRef.current = null;
+                            setSelectedId(null);
+                          }
+                          persistDrawings(next);
+                        }}
+                        className="flex h-5 w-5 items-center justify-center rounded-[2px] text-zinc-600 hover:text-down"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
         {/* Mode + TF pills — compact, top-left of chart content */}
         <div className="pointer-events-none absolute left-1.5 top-1.5 z-10 flex items-center gap-1">
           <div className="pointer-events-auto flex h-6 overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
@@ -2034,9 +2426,26 @@ export function ChartWidget() {
             ))}
           </div>
           {chartMode === 'footprint' && (
-            <div className="pointer-events-none hidden h-6 items-center rounded-[2px] border border-terminal-border/80 bg-black/45 px-1.5 font-mono text-[9px] uppercase tracking-wider text-zinc-500 backdrop-blur-[2px] sm:flex">
-              sell|buy · imb ≥{FOOTPRINT_IMBALANCE_RATIO}:1 · stack≥{FOOTPRINT_STACK_MIN} · naked POC
-            </div>
+            <>
+              <div className="pointer-events-auto dom-seg h-6 bg-black/55 backdrop-blur-[2px]" role="group" aria-label="Footprint grading">
+                {FOOTPRINT_GRADE_MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className="dom-seg-btn h-full"
+                    data-active={footprintGrade === m.id ? 'true' : 'false'}
+                    title={m.hint}
+                    onClick={() => setFootprintGradeMode(m.id)}
+                  >
+                    <span className="hidden sm:inline">{m.label}</span>
+                    <span className="sm:hidden">{m.short}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="pointer-events-none hidden h-6 items-center rounded-[2px] border border-terminal-border/80 bg-black/45 px-1.5 font-mono text-[9px] uppercase tracking-wider text-zinc-500 backdrop-blur-[2px] md:flex">
+                sell|buy · imb ≥{FOOTPRINT_IMBALANCE_RATIO}:1 · stack≥{FOOTPRINT_STACK_MIN}
+              </div>
+            </>
           )}
         </div>
 
@@ -2047,7 +2456,23 @@ export function ChartWidget() {
               label="Heatmap"
               short="HM"
               on={showHeatmap}
-              onClick={() => setShowHeatmap(!showHeatmap)}
+              onClick={() => {
+                const next = !showHeatmap;
+                setShowHeatmap(next);
+                if (!next) setHeatmapMenuOpen(false);
+              }}
+              onGear={
+                showHeatmap
+                  ? () => {
+                      setHeatmapMenuOpen((v) => !v);
+                      setVwapMenuOpen(false);
+                      setBarStatsMenuOpen(false);
+                      setLayersMenuOpen(false);
+                    }
+                  : undefined
+              }
+              gearTitle="Heatmap craft"
+              gearOpen={heatmapMenuOpen}
             />
             <LayerChip
               label="VWAP"
@@ -2060,6 +2485,7 @@ export function ChartWidget() {
                 if (next) {
                   setBarStatsMenuOpen(false);
                   setLayersMenuOpen(false);
+                  setHeatmapMenuOpen(false);
                 }
               }}
               onGear={
@@ -2068,6 +2494,7 @@ export function ChartWidget() {
                       setVwapMenuOpen((v) => !v);
                       setBarStatsMenuOpen(false);
                       setLayersMenuOpen(false);
+                      setHeatmapMenuOpen(false);
                     }
                   : undefined
               }
@@ -2087,6 +2514,7 @@ export function ChartWidget() {
                 setLayersMenuOpen((v) => !v);
                 setVwapMenuOpen(false);
                 setBarStatsMenuOpen(false);
+                setHeatmapMenuOpen(false);
               }}
               className={`inline-flex items-center gap-1 px-1.5 text-[9px] font-semibold uppercase tracking-wider ${
                 layersMenuOpen
@@ -2144,6 +2572,7 @@ export function ChartWidget() {
                     ? () => {
                         setBarStatsMenuOpen((v) => !v);
                         setVwapMenuOpen(false);
+                        setHeatmapMenuOpen(false);
                       }
                     : undefined
                 }
@@ -2199,6 +2628,175 @@ export function ChartWidget() {
 
               <div className="mt-1 border-t border-terminal-border/70 px-1.5 pt-1 font-mono text-[8px] leading-snug text-zinc-600">
                 Favorites on dock · Heatmap / VWAP / CVD
+              </div>
+            </div>
+          )}
+
+          {showHeatmap && heatmapMenuOpen && (
+            <div
+              data-heatmap-craft
+              className="pointer-events-auto absolute bottom-9 left-0 z-20 w-[220px] rounded-[2px] border border-terminal-border bg-black/92 p-1.5 shadow-panel backdrop-blur-[2px]"
+            >
+              <div className="flex items-center gap-1.5 px-1 pb-1 pt-0.5">
+                <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">
+                  Heatmap craft
+                </span>
+                <span className="ml-auto font-mono text-[8px] uppercase tracking-wider text-zinc-600">
+                  live
+                </span>
+                <button
+                  type="button"
+                  title="Close (Esc)"
+                  aria-label="Close heatmap craft"
+                  onClick={() => setHeatmapMenuOpen(false)}
+                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[2px] font-mono text-[11px] leading-none text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200"
+                >
+                  ×
+                </button>
+              </div>
+
+              <label className="mb-1 block px-1">
+                <div className="mb-0.5 flex items-center justify-between font-mono text-[8px] uppercase tracking-[0.12em] text-zinc-600">
+                  <span>Low</span>
+                  <span className="text-zinc-400">{Math.round(heatmapCraft.lowIntensity * 100)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={40}
+                  step={1}
+                  value={Math.round(heatmapCraft.lowIntensity * 100)}
+                  onChange={(e) =>
+                    updateHeatmapCraft({ lowIntensity: Number(e.target.value) / 100 })
+                  }
+                  className="hm-craft-range w-full"
+                  title="Hide soft liquidity below this floor"
+                />
+              </label>
+
+              <label className="mb-1.5 block px-1">
+                <div className="mb-0.5 flex items-center justify-between font-mono text-[8px] uppercase tracking-[0.12em] text-zinc-600">
+                  <span>Peak</span>
+                  <span className="text-zinc-400">{Math.round(heatmapCraft.peakIntensity * 100)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={Math.round(heatmapCraft.peakIntensity * 100)}
+                  onChange={(e) =>
+                    updateHeatmapCraft({ peakIntensity: Number(e.target.value) / 100 })
+                  }
+                  className="hm-craft-range w-full"
+                  title="Soft-peak saturation — higher = only walls glow"
+                />
+              </label>
+
+              <div className="mb-1 px-1 font-mono text-[8px] uppercase tracking-[0.14em] text-zinc-600">
+                Bins
+              </div>
+              <div className="mb-1.5 flex gap-0.5 px-1">
+                {([
+                  ['hd', 'HD'],
+                  ['sd', 'SD'],
+                ] as const).map(([id, label]) => {
+                  const on = heatmapCraft.binMode === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      title={id === 'hd' ? 'Finer price bins' : 'Coarser aggregated bins'}
+                      onClick={() => updateHeatmapCraft({ binMode: id })}
+                      className={`flex-1 rounded-[2px] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider ${
+                        on
+                          ? 'bg-accent/20 text-accent ring-1 ring-inset ring-accent/40'
+                          : 'bg-white/[0.03] text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mb-1 px-1 font-mono text-[8px] uppercase tracking-[0.14em] text-zinc-600">
+                Style
+              </div>
+              <div className="mb-1.5 flex gap-0.5 px-1">
+                {([
+                  ['classic', 'Classic'],
+                  ['splat', 'Splat'],
+                ] as const).map(([id, label]) => {
+                  const on = heatmapCraft.style === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      title={id === 'classic' ? 'Crisp book walls' : 'Softer / blurrier walls'}
+                      onClick={() => updateHeatmapCraft({ style: id })}
+                      className={`flex-1 rounded-[2px] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider ${
+                        on
+                          ? 'bg-accent/20 text-accent ring-1 ring-inset ring-accent/40'
+                          : 'bg-white/[0.03] text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                title="Keep heatmap trail updating at the live right edge"
+                onClick={() => updateHeatmapCraft({ extendLive: !heatmapCraft.extendLive })}
+                className={`mb-1.5 flex w-full items-center gap-1.5 rounded-[2px] px-1.5 py-1 font-mono text-[10px] uppercase tracking-wider ${
+                  heatmapCraft.extendLive
+                    ? 'bg-accent/20 text-accent ring-1 ring-inset ring-accent/40'
+                    : 'bg-white/[0.03] text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                <span
+                  className={`flex h-3 w-3 shrink-0 items-center justify-center rounded-[2px] border ${
+                    heatmapCraft.extendLive
+                      ? 'border-accent/60 bg-accent/25 text-accent'
+                      : 'border-terminal-border bg-black/40 text-transparent'
+                  }`}
+                >
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden>
+                    <path d="M1.5 4.2L3.2 5.8L6.5 2.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+                Extend live
+              </button>
+
+              <div className="mb-1 px-1 font-mono text-[8px] uppercase tracking-[0.14em] text-zinc-600">
+                Colormap
+              </div>
+              <div className="mb-0.5 grid grid-cols-2 gap-0.5 px-1">
+                {HEATMAP_COLORMAPS.map((cm) => {
+                  const on = heatmapCraft.colormap === cm.id;
+                  return (
+                    <button
+                      key={cm.id}
+                      type="button"
+                      title={cm.hint}
+                      onClick={() => updateHeatmapCraft({ colormap: cm.id })}
+                      className={`rounded-[2px] px-1.5 py-0.5 text-left font-mono text-[9px] uppercase tracking-wider ${
+                        on
+                          ? 'bg-accent/20 text-accent ring-1 ring-inset ring-accent/40'
+                          : 'bg-white/[0.03] text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      {cm.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-1 border-t border-terminal-border/70 px-1 pt-1 font-mono text-[8px] leading-snug text-zinc-600">
+                Rolling book craft · not historical HD archive
               </div>
             </div>
           )}
@@ -2326,7 +2924,71 @@ export function ChartWidget() {
                 </div>
               </>
             )}
+            {showFibProps && selectedDrawing.type === 'fib' && (
+              <>
+                <div className="h-3.5 w-px bg-terminal-border" />
+                <button
+                  type="button"
+                  title="Extend fib levels right"
+                  onClick={() =>
+                    patchSelected({
+                      extendRight: !selectedDrawing.extendRight,
+                    } as Partial<ChartDrawing>)
+                  }
+                  className={`flex h-5 min-w-[22px] items-center justify-center rounded-[2px] px-1 font-mono text-[9px] uppercase ${
+                    selectedDrawing.extendRight
+                      ? 'bg-accent/20 text-accent'
+                      : 'text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200'
+                  }`}
+                >
+                  →
+                </button>
+                <div className="flex items-center gap-0.5">
+                  {FIB_TOGGLE_LEVELS.map((lvl) => {
+                    const on = activeFibLevels(selectedDrawing).includes(lvl);
+                    const chip =
+                      lvl === 0.5 ? '50' : String(Math.round(lvl * 1000));
+                    return (
+                      <button
+                        key={lvl}
+                        type="button"
+                        title={`Fib ${lvl} ${on ? 'on' : 'off'}`}
+                        onClick={() => {
+                          const cur = new Set(activeFibLevels(selectedDrawing));
+                          if (on) cur.delete(lvl);
+                          else cur.add(lvl);
+                          patchSelected({
+                            levels: normalizeFibLevels([...cur]),
+                          } as Partial<ChartDrawing>);
+                        }}
+                        className={`flex h-5 min-w-[22px] items-center justify-center rounded-[2px] px-0.5 font-mono text-[8px] ${
+                          on
+                            ? 'bg-accent/20 text-accent'
+                            : 'text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-300'
+                        }`}
+                      >
+                        {chip}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
             <div className="h-3.5 w-px bg-terminal-border" />
+            <button
+              type="button"
+              title={selectedVisible ? 'Hide drawing' : 'Show drawing'}
+              onClick={() =>
+                patchSelected({ visible: !selectedVisible } as Partial<ChartDrawing>)
+              }
+              className={`flex h-5 items-center justify-center rounded-[2px] px-1 ${
+                selectedVisible
+                  ? 'text-accent hover:bg-accent/10'
+                  : 'text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-300'
+              }`}
+            >
+              <IconEye open={selectedVisible} />
+            </button>
             <button
               type="button"
               title="Delete drawing"
@@ -2438,6 +3100,7 @@ function LayerChip({
   onClick,
   onGear,
   gearTitle,
+  gearOpen,
 }: {
   label: string;
   short: string;
@@ -2445,6 +3108,7 @@ function LayerChip({
   onClick: () => void;
   onGear?: () => void;
   gearTitle?: string;
+  gearOpen?: boolean;
 }) {
   return (
     <span className="inline-flex items-stretch">
@@ -2470,9 +3134,11 @@ function LayerChip({
             onGear();
           }}
           className={`border-l border-terminal-border/70 px-1 text-[9px] ${
-            on
-              ? 'bg-accent/10 text-accent/90 hover:text-accent'
-              : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
+            gearOpen
+              ? 'bg-accent/25 text-accent ring-1 ring-inset ring-accent/40'
+              : on
+                ? 'bg-accent/10 text-accent/90 hover:text-accent'
+                : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
           }`}
         >
           ▾
@@ -2630,6 +3296,16 @@ function IconHLine() {
   );
 }
 
+function IconHRay() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <path d="M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="3" cy="7" r="1.35" fill="currentColor" />
+      <path d="M11 4.8L13 7l-2 2.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function IconTrend() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
@@ -2689,6 +3365,40 @@ function IconClear() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
       <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconObjectTree() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <path d="M3 3.5h8M3 7h8M3 10.5h5.5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+      <circle cx="11.2" cy="10.5" r="1.15" fill="currentColor" />
+    </svg>
+  );
+}
+
+function IconEye({ open }: { open: boolean }) {
+  if (!open) {
+    return (
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+        <path
+          d="M1.5 6s1.8-3 4.5-3 4.5 3 4.5 3-1.8 3-4.5 3-4.5-3-4.5-3z"
+          stroke="currentColor"
+          strokeWidth="1.2"
+        />
+        <path d="M2 10L10 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+      <path
+        d="M1.5 6s1.8-3 4.5-3 4.5 3 4.5 3-1.8 3-4.5 3-4.5-3-4.5-3z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+      <circle cx="6" cy="6" r="1.35" fill="currentColor" />
     </svg>
   );
 }

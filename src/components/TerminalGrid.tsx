@@ -82,7 +82,7 @@ function ChartMaximizeButton() {
         e.stopPropagation();
         toggleChartMaximized();
       }}
-      className="flex h-5 w-5 items-center justify-center rounded-[2px] text-zinc-500 opacity-70 transition hover:bg-white/[0.05] hover:text-zinc-200 hover:opacity-100"
+      className="flex h-4 w-4 items-center justify-center rounded-[2px] text-zinc-500 opacity-70 transition hover:bg-accent/10 hover:text-accent hover:opacity-100"
     >
       {chartMaximized ? (
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>

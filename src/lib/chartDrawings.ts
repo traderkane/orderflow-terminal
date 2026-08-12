@@ -6,7 +6,7 @@ import type { SymbolId } from '../types/market';
 export const DRAWINGS_STORAGE_KEY = 'flow-terminal-drawings-v1';
 
 /** null / 'select' = cursor mode; eraser deletes on click. */
-export type DrawingTool = 'select' | 'hline' | 'trend' | 'rect' | 'fib' | 'eraser' | null;
+export type DrawingTool = 'select' | 'hline' | 'hray' | 'trend' | 'rect' | 'fib' | 'eraser' | null;
 
 export const DRAWING_COLORS = [
   '#d4d4d8',
@@ -30,6 +30,8 @@ export type DrawingStyle = {
 
 type DrawingBase = DrawingStyle & {
   id: string;
+  /** When false, drawing is hidden (Object Tree / props). Default true. */
+  visible?: boolean;
 };
 
 export type HorizontalDrawing = DrawingBase & {
@@ -37,6 +39,13 @@ export type HorizontalDrawing = DrawingBase & {
   price: number;
   extendLeft: boolean;
   extendRight: boolean;
+};
+
+/** Horizontal ray — anchored at t1, extends infinitely to the right. */
+export type HorizontalRayDrawing = DrawingBase & {
+  type: 'hray';
+  price: number;
+  t1: number;
 };
 
 export type TrendDrawing = DrawingBase & {
@@ -63,10 +72,14 @@ export type FibDrawing = DrawingBase & {
   p1: number;
   t2: number;
   p2: number;
+  extendRight?: boolean;
+  /** Active fib ratios; omit = all FIB_LEVELS. 0 and 1 are always kept. */
+  levels?: number[];
 };
 
 export type ChartDrawing =
   | HorizontalDrawing
+  | HorizontalRayDrawing
   | TrendDrawing
   | RectDrawing
   | FibDrawing;
@@ -93,16 +106,36 @@ export type DrawingHit = {
 };
 
 export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
+/** Levels users can toggle in fib props (0 & 1 always on). */
+export const FIB_TOGGLE_LEVELS = [0.236, 0.382, 0.5, 0.618, 0.786] as const;
 
 const LINE_SEL = 'rgba(240, 185, 11, 0.85)';
 const LABEL_BG = 'rgba(10, 12, 16, 0.82)';
 const LABEL_FG = 'rgba(228, 228, 231, 0.92)';
 const HIT_PX = 7;
 const HANDLE_HIT = 9;
-const MAGNET_PX = 8;
+export const MAGNET_PX = 8;
 
 export function defaultDrawingStyle(): DrawingStyle {
   return { color: DEFAULT_DRAWING_COLOR, lineWidth: DEFAULT_LINE_WIDTH };
+}
+
+export function normalizeFibLevels(levels?: number[]): number[] {
+  const base = Array.isArray(levels) && levels.length
+    ? levels.filter((n) => typeof n === 'number' && Number.isFinite(n))
+    : [...FIB_LEVELS];
+  const set = new Set<number>(base);
+  set.add(0);
+  set.add(1);
+  return [...FIB_LEVELS].filter((l) => set.has(l));
+}
+
+export function activeFibLevels(d: FibDrawing): number[] {
+  return normalizeFibLevels(d.levels);
+}
+
+export function isDrawingVisible(d: ChartDrawing): boolean {
+  return d.visible !== false;
 }
 
 export function withDrawingDefaults<T extends ChartDrawing>(d: T): T {
@@ -112,14 +145,25 @@ export function withDrawingDefaults<T extends ChartDrawing>(d: T): T {
     : style.color;
   const lw = Number((d as DrawingStyle).lineWidth);
   const lineWidth = Number.isFinite(lw) && lw >= 1 ? Math.min(4, Math.round(lw)) : style.lineWidth;
+  const visible = d.visible !== false;
 
   if (d.type === 'hline') {
     return {
       ...d,
       color,
       lineWidth,
+      visible,
       extendLeft: d.extendLeft ?? true,
       extendRight: d.extendRight ?? true,
+    };
+  }
+  if (d.type === 'hray') {
+    return {
+      ...d,
+      color,
+      lineWidth,
+      visible,
+      t1: Number.isFinite(d.t1) ? d.t1 : 0,
     };
   }
   if (d.type === 'trend') {
@@ -127,11 +171,22 @@ export function withDrawingDefaults<T extends ChartDrawing>(d: T): T {
       ...d,
       color,
       lineWidth,
+      visible,
       extendLeft: d.extendLeft ?? false,
       extendRight: d.extendRight ?? false,
     };
   }
-  return { ...d, color, lineWidth };
+  if (d.type === 'fib') {
+    return {
+      ...d,
+      color,
+      lineWidth,
+      visible,
+      extendRight: d.extendRight ?? false,
+      levels: normalizeFibLevels(d.levels),
+    };
+  }
+  return { ...d, color, lineWidth, visible };
 }
 
 function strokeFor(d: DrawingStyle, selected: boolean, draft = false): string {
@@ -170,8 +225,48 @@ export function newDrawingId(): string {
 
 export function isPlaceTool(
   tool: DrawingTool,
-): tool is 'hline' | 'trend' | 'rect' | 'fib' {
-  return tool === 'hline' || tool === 'trend' || tool === 'rect' || tool === 'fib';
+): tool is 'hline' | 'hray' | 'trend' | 'rect' | 'fib' {
+  return (
+    tool === 'hline' ||
+    tool === 'hray' ||
+    tool === 'trend' ||
+    tool === 'rect' ||
+    tool === 'fib'
+  );
+}
+
+export function drawingTypeLabel(d: ChartDrawing): string {
+  switch (d.type) {
+    case 'hline':
+      return 'H-Line';
+    case 'hray':
+      return 'H-Ray';
+    case 'trend':
+      return 'Trend';
+    case 'rect':
+      return 'Rect';
+    case 'fib':
+      return 'Fib';
+    default:
+      return 'Draw';
+  }
+}
+
+export function drawingTypeShort(d: ChartDrawing): string {
+  switch (d.type) {
+    case 'hline':
+      return 'H';
+    case 'hray':
+      return 'Ray';
+    case 'trend':
+      return 'Tr';
+    case 'rect':
+      return 'R';
+    case 'fib':
+      return 'Fib';
+    default:
+      return '?';
+  }
 }
 
 export function isSelectTool(tool: DrawingTool): boolean {
@@ -422,12 +517,15 @@ function hitFib(
   y1: number,
   x2: number,
   y2: number,
+  levels: readonly number[],
+  extendRight: boolean,
+  plotW: number,
 ): boolean {
   const left = Math.min(x1, x2);
-  const right = Math.max(x1, x2);
+  const right = extendRight ? plotW : Math.max(x1, x2);
   const xPad = 4;
   if (x < left - xPad || x > right + xPad) return false;
-  for (const level of FIB_LEVELS) {
+  for (const level of levels) {
     const yy = y1 + (y2 - y1) * level;
     if (Math.abs(y - yy) <= HIT_PX) return true;
   }
@@ -446,7 +544,7 @@ export function hitTestDrawingDetailed(
   // Prefer handles on the preferred (selected) drawing first.
   if (preferredId) {
     const pref = drawings.find((d) => d.id === preferredId);
-    if (pref) {
+    if (pref && isDrawingVisible(pref)) {
       const handle = hitHandles(pref, chart, series, x, y);
       if (handle) return { drawing: pref, handle };
     }
@@ -454,6 +552,7 @@ export function hitTestDrawingDetailed(
 
   for (let i = drawings.length - 1; i >= 0; i--) {
     const d = drawings[i];
+    if (!isDrawingVisible(d)) continue;
     const handle = hitHandles(d, chart, series, x, y);
     if (handle) return { drawing: d, handle };
 
@@ -464,6 +563,19 @@ export function hitTestDrawingDetailed(
       const plotW = chart.timeScale().width() || 0;
       const span = hlineSpan(plotW, d.extendLeft, d.extendRight);
       if (x >= span.x0 - HIT_PX && x <= span.x1 + HIT_PX) {
+        return { drawing: d, handle: 'body' };
+      }
+      continue;
+    }
+
+    if (d.type === 'hray') {
+      const yy = series.priceToCoordinate(d.price);
+      if (yy == null || !Number.isFinite(yy)) continue;
+      if (Math.abs(y - yy) > HIT_PX) continue;
+      const plotW = chart.timeScale().width() || 0;
+      const ax = chart.timeScale().timeToCoordinate(Math.floor(d.t1) as Time);
+      const x0 = ax == null || !Number.isFinite(ax) ? 0 : ax;
+      if (x >= x0 - HIT_PX && x <= plotW + HIT_PX) {
         return { drawing: d, handle: 'body' };
       }
       continue;
@@ -493,7 +605,20 @@ export function hitTestDrawingDetailed(
         return { drawing: d, handle: 'body' };
       }
     } else if (d.type === 'fib') {
-      if (hitFib(x, y, c.x1, c.y1, c.x2, c.y2)) {
+      const plotW = chart.timeScale().width() || 0;
+      if (
+        hitFib(
+          x,
+          y,
+          c.x1,
+          c.y1,
+          c.x2,
+          c.y2,
+          activeFibLevels(d),
+          !!d.extendRight,
+          plotW,
+        )
+      ) {
         return { drawing: d, handle: 'body' };
       }
     }
@@ -509,6 +634,15 @@ function hitHandles(
   y: number,
 ): HandleId | null {
   if (d.type === 'hline') return null;
+  if (d.type === 'hray') {
+    const yy = series.priceToCoordinate(d.price);
+    const ax = chart.timeScale().timeToCoordinate(Math.floor(d.t1) as Time);
+    if (yy == null || ax == null || !Number.isFinite(yy) || !Number.isFinite(ax)) {
+      return null;
+    }
+    if (Math.hypot(x - ax, y - yy) <= HANDLE_HIT) return 'p1';
+    return null;
+  }
   const c = coordsForTwoPoint(chart, series, d.t1, d.p1, d.t2, d.p2);
   if (!c) return null;
   if (Math.hypot(x - c.x1, y - c.y1) <= HANDLE_HIT) return 'p1';
@@ -534,6 +668,16 @@ export function applyDrawingDrag(
   timeDelta: number,
 ): ChartDrawing {
   if (drawing.type === 'hline') {
+    return { ...drawing, price: drawing.price + priceDelta };
+  }
+  if (drawing.type === 'hray') {
+    if (handle === 'p1') {
+      return {
+        ...drawing,
+        t1: drawing.t1 + timeDelta,
+        price: drawing.price + priceDelta,
+      };
+    }
     return { ...drawing, price: drawing.price + priceDelta };
   }
 
@@ -568,7 +712,7 @@ export function deleteControlAnchor(
   series: ISeriesApi<'Candlestick'>,
   paneW: number,
 ): { x: number; y: number } | null {
-  if (drawing.type === 'hline') {
+  if (drawing.type === 'hline' || drawing.type === 'hray') {
     const y = series.priceToCoordinate(drawing.price);
     if (y == null || !Number.isFinite(y)) return null;
     return { x: Math.max(24, paneW - 28), y };
@@ -599,9 +743,12 @@ export function drawChartDrawings(
   const plotW = timeScale.width() || paneW;
 
   for (const d of drawings) {
+    if (!isDrawingVisible(d)) continue;
     const selected = d.id === selectedId;
     if (d.type === 'hline') {
       drawHLine(ctx, series, d, plotW, paneH, selected);
+    } else if (d.type === 'hray') {
+      drawHRay(ctx, chart, series, d, plotW, selected);
     } else if (d.type === 'trend') {
       drawTrend(ctx, chart, series, d, selected, false, paneH);
     } else if (d.type === 'rect') {
@@ -720,6 +867,71 @@ function drawHLine(
   ctx.restore();
 }
 
+function drawHRay(
+  ctx: CanvasRenderingContext2D,
+  chart: IChartApi,
+  series: ISeriesApi<'Candlestick'>,
+  d: HorizontalRayDrawing,
+  plotW: number,
+  selected: boolean,
+): void {
+  const y = series.priceToCoordinate(d.price);
+  if (y == null || !Number.isFinite(y)) return;
+  const ax = chart.timeScale().timeToCoordinate(Math.floor(d.t1) as Time);
+  const x0 = ax == null || !Number.isFinite(ax) ? 0 : Math.max(0, ax);
+  const x1 = plotW;
+
+  ctx.save();
+  ctx.strokeStyle = strokeFor(d, selected);
+  ctx.globalAlpha = selected ? 1 : 0.92;
+  ctx.lineWidth = widthFor(d, selected);
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(x0, y);
+  ctx.lineTo(x1, y);
+  ctx.stroke();
+
+  // Arrow tip at right edge
+  ctx.beginPath();
+  ctx.moveTo(x1, y);
+  ctx.lineTo(x1 - 7, y - 3.5);
+  ctx.lineTo(x1 - 7, y + 3.5);
+  ctx.closePath();
+  ctx.fillStyle = strokeFor(d, selected);
+  ctx.fill();
+
+  if (selected) {
+    drawHandle(ctx, x0, y, true);
+    drawHandle(ctx, Math.max(x0 + 24, x1 - 18), y, true);
+  } else {
+    ctx.fillStyle = strokeFor(d, false);
+    ctx.beginPath();
+    ctx.arc(x0, y, 2.25, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const label = formatDrawingPrice(d.price);
+  ctx.font = '600 9px IBM Plex Mono, JetBrains Mono, monospace';
+  const tw = ctx.measureText(label).width;
+  const padX = 5;
+  const boxW = tw + padX * 2;
+  const boxH = 14;
+  const bx = Math.min(Math.max(4, x1 - boxW - 10), Math.max(4, plotW - boxW - 6));
+  const by = y - boxH / 2;
+
+  ctx.fillStyle = LABEL_BG;
+  ctx.strokeStyle = selected ? 'rgba(240,185,11,0.55)' : 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.rect(bx, by, boxW, boxH);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = selected ? 'rgba(240,185,11,0.95)' : LABEL_FG;
+  ctx.fillText(label, bx + padX, by + 10);
+  ctx.restore();
+}
+
 function drawTrend(
   ctx: CanvasRenderingContext2D,
   chart: IChartApi,
@@ -816,15 +1028,17 @@ function drawFib(
   const c = coordsForTwoPoint(chart, series, d.t1, d.p1, d.t2, d.p2);
   if (!c) return;
   const left = Math.min(c.x1, c.x2);
-  const right = Math.max(c.x1, c.x2);
-  const span = Math.max(1, right - left);
+  const rightAnchor = Math.max(c.x1, c.x2);
+  const plotW = chart.timeScale().width() || rightAnchor + 40;
+  const right = !draft && d.extendRight ? plotW : rightAnchor;
+  const levels = draft ? [...FIB_LEVELS] : activeFibLevels(d);
 
   ctx.save();
 
   const top = Math.min(c.y1, c.y2);
   const bot = Math.max(c.y1, c.y2);
   ctx.fillStyle = hexToRgba(d.color || DEFAULT_DRAWING_COLOR, draft || selected ? 0.08 : 0.04);
-  ctx.fillRect(left, top, span, Math.max(1, bot - top));
+  ctx.fillRect(left, top, Math.max(1, rightAnchor - left), Math.max(1, bot - top));
 
   ctx.strokeStyle = hexToRgba(d.color || DEFAULT_DRAWING_COLOR, draft || selected ? 0.55 : 0.35);
   ctx.lineWidth = 1;
@@ -837,7 +1051,7 @@ function drawFib(
 
   ctx.font = '600 9px IBM Plex Mono, JetBrains Mono, monospace';
 
-  for (const level of FIB_LEVELS) {
+  for (const level of levels) {
     const price = d.p1 + (d.p2 - d.p1) * level;
     const y = c.y1 + (c.y2 - c.y1) * level;
     const isExtreme = level === 0 || level === 1;
@@ -860,7 +1074,6 @@ function drawFib(
     const boxW = tw + padX * 2;
     const boxH = 13;
     const bx = right + 4;
-    const plotW = chart.timeScale().width() || right + boxW + 8;
     const labelX = bx + boxW > plotW - 2 ? left - boxW - 4 : bx;
     const by = y - boxH / 2;
 
@@ -885,5 +1098,45 @@ function drawFib(
   drawHandle(ctx, c.x1, c.y1, selected, draft);
   drawHandle(ctx, c.x2, c.y2, selected, draft);
 
+  ctx.restore();
+}
+
+/** Visible magnet snap affordance — ring at MAGNET_PX, stronger when snapped. */
+export function drawMagnetPreview(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  snapped: boolean,
+  radiusPx: number = MAGNET_PX,
+): void {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, radiusPx, 0, Math.PI * 2);
+  ctx.strokeStyle = snapped
+    ? 'rgba(240,185,11,0.75)'
+    : 'rgba(240,185,11,0.28)';
+  ctx.lineWidth = snapped ? 1.35 : 1;
+  ctx.setLineDash(snapped ? [] : [2.5, 2.5]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  if (snapped) {
+    ctx.beginPath();
+    ctx.arc(x, y, 2.4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(240,185,11,0.95)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(240,185,11,0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x - radiusPx - 2, y);
+    ctx.lineTo(x - 3.5, y);
+    ctx.moveTo(x + 3.5, y);
+    ctx.lineTo(x + radiusPx + 2, y);
+    ctx.moveTo(x, y - radiusPx - 2);
+    ctx.lineTo(x, y - 3.5);
+    ctx.moveTo(x, y + 3.5);
+    ctx.lineTo(x, y + radiusPx + 2);
+    ctx.stroke();
+  }
   ctx.restore();
 }

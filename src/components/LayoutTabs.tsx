@@ -40,11 +40,11 @@ export function LayoutTabs() {
   };
 
   return (
-    <div className="layout-tabs flex h-6 shrink-0 items-center gap-0.5 border-b border-terminal-border bg-terminal-chrome px-2">
-      <div className="mr-1 hidden font-mono text-[9px] font-medium uppercase tracking-[0.14em] text-terminal-label sm:block">
+    <div className="layout-tabs flex h-5 shrink-0 items-center gap-0.5 border-b border-terminal-border bg-terminal-chrome px-1.5">
+      <div className="mr-1 hidden font-mono text-[8px] font-medium uppercase tracking-[0.1em] text-terminal-label sm:block">
         Layout
       </div>
-      <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+      <div className="flex min-w-0 flex-1 items-center gap-px overflow-x-auto">
         {tabs.map((tab) => {
           const active = activeLayoutId === tab.id;
           return (
@@ -53,11 +53,8 @@ export function LayoutTabs() {
               type="button"
               onClick={() => applyLayoutTab(tab.id)}
               title={tab.builtin ? `${tab.name} layout` : `Load “${tab.name}”`}
-              className={`h-5 max-w-[9rem] shrink-0 truncate rounded-[2px] px-2 font-mono text-[10px] font-medium uppercase tracking-[0.12em] transition-colors ${
-                active
-                  ? 'bg-white/[0.08] text-zinc-100'
-                  : 'text-terminal-muted hover:bg-white/[0.03] hover:text-zinc-300'
-              }`}
+              data-active={active ? 'true' : 'false'}
+              className="layout-tab h-full max-w-[8.5rem] shrink-0 truncate px-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.1em] transition-colors"
             >
               {tab.name}
             </button>
@@ -65,7 +62,7 @@ export function LayoutTabs() {
         })}
 
         {adding ? (
-          <div className="ml-0.5 flex h-5 items-center gap-0.5">
+          <div className="ml-0.5 flex h-4 items-center gap-0.5">
             <input
               type="text"
               value={name}
@@ -80,13 +77,13 @@ export function LayoutTabs() {
                   setName('');
                 }
               }}
-              className="h-5 w-24 rounded-[2px] border border-terminal-border bg-terminal-elevated px-1.5 font-mono text-[10px] text-zinc-100 outline-none focus:border-up/35"
+              className="chrome-input h-4 w-24 rounded-[2px] border border-terminal-border bg-terminal-elevated px-1 font-mono text-[10px] text-[color:inherit] outline-none"
             />
             <button
               type="button"
               onClick={onSave}
               disabled={!name.trim()}
-              className="h-5 rounded-[2px] bg-up/15 px-1.5 text-[9px] font-medium uppercase tracking-wider text-up enabled:hover:bg-up/25 disabled:opacity-40"
+              className="h-4 rounded-[2px] bg-accent/15 px-1.5 text-[8px] font-medium uppercase tracking-wider text-accent enabled:hover:bg-accent/25 disabled:opacity-40"
             >
               Save
             </button>
@@ -96,7 +93,7 @@ export function LayoutTabs() {
                 setAdding(false);
                 setName('');
               }}
-              className="h-5 rounded-[2px] px-1 text-[9px] uppercase tracking-wider text-terminal-muted hover:text-zinc-300"
+              className="h-4 rounded-[2px] px-1 text-[8px] uppercase tracking-wider text-terminal-muted hover:text-[color:inherit]"
             >
               Esc
             </button>
@@ -106,7 +103,7 @@ export function LayoutTabs() {
             type="button"
             onClick={() => setAdding(true)}
             title="Save current layout as a new tab"
-            className="ml-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-[2px] text-[12px] leading-none text-terminal-muted transition-colors hover:bg-white/[0.04] hover:text-zinc-200"
+            className="ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[2px] text-[11px] leading-none text-terminal-muted transition-colors hover:bg-white/[0.04] hover:text-[color:inherit]"
           >
             +
           </button>

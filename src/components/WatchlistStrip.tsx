@@ -79,8 +79,8 @@ export function WatchlistStrip() {
   };
 
   return (
-    <div className="watchlist-strip flex h-6 shrink-0 items-center gap-0.5 border-b border-terminal-border bg-terminal-chrome px-2">
-      <div className="mr-1 hidden font-mono text-[9px] font-medium uppercase tracking-[0.14em] text-terminal-label sm:block">
+    <div className="watchlist-strip flex h-5 shrink-0 items-center gap-0.5 border-b border-terminal-border bg-terminal-chrome px-1.5">
+      <div className="mr-1 hidden font-mono text-[8px] font-medium uppercase tracking-[0.1em] text-terminal-label sm:block">
         Watch
       </div>
 
@@ -92,11 +92,8 @@ export function WatchlistStrip() {
           return (
             <div
               key={s}
-              className={`group relative flex h-5 shrink-0 items-stretch overflow-hidden rounded-[2px] transition-colors ${
-                active
-                  ? 'bg-white/[0.08]'
-                  : 'hover:bg-white/[0.03]'
-              }`}
+              data-active={active ? 'true' : 'false'}
+              className="watch-chip group relative flex h-4 shrink-0 items-stretch overflow-hidden rounded-[2px] transition-colors"
             >
               <button
                 type="button"
@@ -107,8 +104,8 @@ export function WatchlistStrip() {
                 }`}
               >
                 <span
-                  className={`font-mono text-[10px] font-semibold tracking-wide ${
-                    active ? 'text-zinc-50' : 'text-zinc-400 group-hover:text-zinc-200'
+                  className={`watch-chip-symbol font-mono text-[10px] font-semibold tracking-wide ${
+                    active ? '' : 'text-zinc-400 group-hover:text-zinc-200'
                   }`}
                 >
                   {s}
@@ -151,7 +148,7 @@ export function WatchlistStrip() {
                 ? 'All symbols already on watchlist'
                 : 'Add symbol to watchlist'
             }
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[2px] text-[12px] leading-none text-terminal-muted transition-colors hover:bg-white/[0.04] hover:text-zinc-200 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
+            className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[2px] text-[11px] leading-none text-terminal-muted transition-colors hover:bg-white/[0.04] hover:text-zinc-200 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
           >
             +
           </button>
@@ -187,7 +184,7 @@ export function WatchlistStrip() {
                     }
                   }}
                   placeholder="Add symbol…"
-                  className="h-6 w-full rounded-[2px] border border-terminal-border bg-terminal-elevated px-2 font-mono text-[11px] text-zinc-100 outline-none placeholder:text-terminal-muted focus:border-up/35"
+                  className="chrome-input h-6 w-full rounded-[2px] border border-terminal-border bg-terminal-elevated px-2 font-mono text-[11px] text-zinc-100 outline-none placeholder:text-terminal-muted"
                 />
               </div>
               <ul className="max-h-40 overflow-auto py-0.5">

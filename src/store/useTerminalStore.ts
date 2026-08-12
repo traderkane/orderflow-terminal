@@ -854,7 +854,7 @@ export const WIDGET_META: Record<
   { title: string; description: string }
 > = {
   chart: { title: 'Chart', description: 'Workspace chart — drawings, heatmap, VPVR, bubbles, session VWAP, bar stats, CVD / liqs' },
-  orderbook: { title: 'Order Book', description: 'DOM ladder with cumulative depth' },
+  orderbook: { title: 'Order Book', description: 'MMT-style DOM — centered ladder, heat sizes, session Buys/Sells/Delta' },
   trades: { title: 'Trades Tape', description: 'Aggressor buy/sell tape' },
   heatmap: { title: 'Book Heatmap', description: 'Time × price liquidity' },
   cvd: { title: 'CVD / Delta', description: 'Cumulative volume delta' },

@@ -94,7 +94,7 @@ export function SymbolPicker() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex h-6 max-w-[7.5rem] items-center gap-1 rounded-[2px] border-0 bg-transparent py-0 pl-0.5 pr-1 font-mono text-[12px] font-semibold tracking-wide text-zinc-100 outline-none hover:bg-white/[0.03] focus:bg-white/[0.04]"
+        className="chrome-focus flex h-5 max-w-[7.5rem] items-center gap-1 rounded-[2px] border-0 bg-transparent py-0 pl-0.5 pr-1 font-mono text-[12px] font-semibold tracking-wide text-zinc-100 outline-none hover:bg-white/[0.03] focus:bg-accent/[0.08]"
         aria-label="Symbol"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -125,7 +125,7 @@ export function SymbolPicker() {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onKeyDown}
               placeholder="Search symbol…"
-              className="h-6 w-full rounded-[2px] border border-terminal-border bg-terminal-elevated px-2 font-mono text-[11px] text-zinc-100 outline-none placeholder:text-terminal-muted focus:border-up/35"
+              className="chrome-input h-6 w-full rounded-[2px] border border-terminal-border bg-terminal-elevated px-2 font-mono text-[11px] text-zinc-100 outline-none placeholder:text-terminal-muted"
             />
           </div>
           <ul className="max-h-52 overflow-auto py-0.5">
@@ -150,7 +150,7 @@ export function SymbolPicker() {
                     >
                       <span className="flex items-center gap-1.5 font-mono text-[11px] font-semibold tracking-wide">
                         {active && (
-                          <span className="h-1 w-1 rounded-full bg-up" aria-hidden />
+                          <span className="h-1 w-1 rounded-full bg-accent" aria-hidden />
                         )}
                         {!active && <span className="w-1" aria-hidden />}
                         {s}
