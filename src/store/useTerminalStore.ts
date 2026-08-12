@@ -133,11 +133,14 @@ interface TerminalState {
   launcherOpen: boolean;
   openPanel: PanelId;
 
-  /** Shared chart↔DOM hover price (null when not hovering). */
+  /** Shared chart↔DOM↔tape hover price (null when not hovering). */
   hoverPrice: number | null;
-  /** Who last set hoverPrice — chart draws a sync line only for 'dom'. */
-  hoverSource: 'chart' | 'dom' | null;
-  setHoverPrice: (price: number | null, source?: 'chart' | 'dom' | null) => void;
+  /** Who last set hoverPrice — chart draws a sync line for 'dom' | 'tape'. */
+  hoverSource: 'chart' | 'dom' | 'tape' | null;
+  setHoverPrice: (price: number | null, source?: 'chart' | 'dom' | 'tape' | null) => void;
+  /** Short-lived chart emphasis (e.g. tape row click). */
+  focusPrice: number | null;
+  pulseFocusPrice: (price: number, ms?: number) => void;
 
   alerts: PriceAlert[];
   alertHistory: AlertFire[];
@@ -218,6 +221,8 @@ function stopAll() {
 const prevMetrics = new Map<string, number>();
 
 const initialLayers = loadChartLayers();
+
+let focusClearTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useTerminalStore = create<TerminalState>((set, get) => {
   let unsubData: (() => void) | null = null;
@@ -309,6 +314,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
 
     hoverPrice: null,
     hoverSource: null,
+    focusPrice: null,
 
     alerts: loadJson<PriceAlert[]>(ALERTS_KEY, []),
     alertHistory: loadJson<AlertFire[]>(ALERT_HISTORY_KEY, []),
@@ -351,7 +357,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     },
 
     setSymbol: (symbol) => {
-      set({ symbol, hoverPrice: null, hoverSource: null });
+      set({ symbol, hoverPrice: null, hoverSource: null, focusPrice: null });
       prevMetrics.clear();
       if (get().feedMode === 'live') liveFeed.setSymbol(symbol);
       else mockFeed.setSymbol(symbol);
@@ -481,6 +487,21 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
         return;
       }
       set({ hoverPrice: price, hoverSource: nextSource });
+    },
+
+    pulseFocusPrice: (price, ms = 700) => {
+      if (!Number.isFinite(price)) return;
+      if (focusClearTimer) {
+        clearTimeout(focusClearTimer);
+        focusClearTimer = null;
+      }
+      set({ focusPrice: price });
+      focusClearTimer = setTimeout(() => {
+        focusClearTimer = null;
+        if (get().focusPrice != null && Math.abs(get().focusPrice! - price) < 1e-10) {
+          set({ focusPrice: null });
+        }
+      }, Math.max(120, ms));
     },
 
     addAlert: ({ symbol, condition, threshold, note }) => {

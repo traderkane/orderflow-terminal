@@ -174,6 +174,7 @@ export function ChartWidget() {
   const magnetRef = useRef(true);
   const candlesRef = useRef<Candle[]>([]);
   const hoverPriceLineRef = useRef<IPriceLine | null>(null);
+  const focusPriceLineRef = useRef<IPriceLine | null>(null);
   const lastChartHoverRef = useRef<number | null>(null);
 
   const feed = useTerminalStore((s) => s.feed);
@@ -204,6 +205,7 @@ export function ChartWidget() {
   const setShowBubbles = useTerminalStore((s) => s.setShowBubbles);
   const hoverPrice = useTerminalStore((s) => s.hoverPrice);
   const hoverSource = useTerminalStore((s) => s.hoverSource);
+  const focusPrice = useTerminalStore((s) => s.focusPrice);
 
   flagsRef.current = {
     heatmap: showHeatmap,
@@ -1251,6 +1253,7 @@ export function ChartWidget() {
       chart.timeScale().unsubscribeVisibleTimeRangeChange(onRange);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       hoverPriceLineRef.current = null;
+      focusPriceLineRef.current = null;
       lastChartHoverRef.current = null;
       chart.remove();
       chartRef.current = null;
@@ -1258,12 +1261,17 @@ export function ChartWidget() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // DOM → chart: subtle sync price line when hovering a book row
+  // DOM/tape → chart: subtle sync price line when hovering a book or tape row
   useEffect(() => {
     const series = candleRef.current;
     if (!series) return;
 
-    if (hoverSource === 'dom' && hoverPrice != null && Number.isFinite(hoverPrice)) {
+    const external =
+      (hoverSource === 'dom' || hoverSource === 'tape') &&
+      hoverPrice != null &&
+      Number.isFinite(hoverPrice);
+
+    if (external) {
       if (hoverPriceLineRef.current) {
         hoverPriceLineRef.current.applyOptions({ price: hoverPrice });
       } else {
@@ -1286,6 +1294,35 @@ export function ChartWidget() {
       hoverPriceLineRef.current = null;
     }
   }, [hoverPrice, hoverSource]);
+
+  // Tape click (or other pulse) → brief solid emphasis line on chart
+  useEffect(() => {
+    const series = candleRef.current;
+    if (!series) return;
+
+    if (focusPrice != null && Number.isFinite(focusPrice)) {
+      if (focusPriceLineRef.current) {
+        focusPriceLineRef.current.applyOptions({ price: focusPrice });
+      } else {
+        focusPriceLineRef.current = series.createPriceLine({
+          price: focusPrice,
+          color: 'rgba(240, 185, 11, 0.9)',
+          lineWidth: 2,
+          lineStyle: LineStyle.Solid,
+          axisLabelVisible: true,
+          axisLabelColor: '#f0b90b',
+          axisLabelTextColor: '#0b0e11',
+          title: '',
+        });
+      }
+      return;
+    }
+
+    if (focusPriceLineRef.current) {
+      series.removePriceLine(focusPriceLineRef.current);
+      focusPriceLineRef.current = null;
+    }
+  }, [focusPrice]);
 
   useEffect(() => {
     if (!feed || !candleRef.current || !volumeRef.current) return;

@@ -135,6 +135,11 @@ select {
   background: rgba(240, 185, 11, 0.1);
   box-shadow: inset 0 0 0 1px rgba(240, 185, 11, 0.26);
 }
+/* Tape row hover — light affordance; chart/DOM sync via hoverPrice */
+.tape-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
 
 @keyframes dom-flash-buy {
   0% { background-color: rgba(14, 203, 129, 0.42); }

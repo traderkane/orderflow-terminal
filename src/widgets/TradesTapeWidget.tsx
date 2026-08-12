@@ -3,9 +3,20 @@ import { fmtPrice, fmtSize, fmtTime } from '../lib/format';
 
 export function TradesTapeWidget() {
   const trades = useTerminalStore((s) => s.feed?.trades) ?? [];
+  const setHoverPrice = useTerminalStore((s) => s.setHoverPrice);
+  const pulseFocusPrice = useTerminalStore((s) => s.pulseFocusPrice);
+
+  const onTapeLeave = () => {
+    // Only clear if tape owns the hover — chart/DOM may still be driving it.
+    const src = useTerminalStore.getState().hoverSource;
+    if (src === 'tape') setHoverPrice(null, null);
+  };
 
   return (
-    <div className="flex h-full flex-col font-mono text-[10px] leading-[1.05]">
+    <div
+      className="flex h-full flex-col font-mono text-[10px] leading-[1.05]"
+      onMouseLeave={onTapeLeave}
+    >
       <div className="grid grid-cols-[1fr_1.1fr_0.9fr_auto] border-b border-terminal-border/80 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em] text-terminal-label">
         <span>Time</span>
         <span className="text-right">Price</span>
@@ -23,7 +34,7 @@ export function TradesTapeWidget() {
           return (
             <div
               key={t.id}
-              className={`grid grid-cols-[1fr_1.1fr_0.9fr_auto] items-center px-1.5 py-px ${
+              className={`tape-row grid cursor-pointer grid-cols-[1fr_1.1fr_0.9fr_auto] items-center px-1.5 py-px ${
                 huge
                   ? 'bg-accent/10'
                   : big
@@ -32,6 +43,8 @@ export function TradesTapeWidget() {
                       : 'bg-down/[0.06]'
                     : ''
               }`}
+              onMouseEnter={() => setHoverPrice(t.price, 'tape')}
+              onClick={() => pulseFocusPrice(t.price)}
             >
               <span className="flex items-center gap-1 tabular-nums text-zinc-600">
                 {(big || huge) && (

@@ -34,8 +34,8 @@ npm run preview
 ## Widgets
 
 1. **Chart** — TradingView/MMT-style workspace: **Candles | Footprint** mode switch; left icon drawing rail (select / H-Line / Trend / Rect / Fib / Magnet / Eraser / Clear), bottom **layer dock** (favorites **Heatmap / VWAP / CVD** + **Layers** checklist for Profile / Bubbles / Bars / Count / Liqs), TF pills **1m / 5m / 15m / 1h**; Footprint mode paints clustered sell|buy volumes inside each bar with delta tint + imbalance outlines (best at 1m; denser/compact on higher TFs); selected-drawing properties mini-panel (color / width / extend L-R / delete); magnet snap to candle OHLC+mid; maximize chart from header (**F** / Esc); drag-to-move drawings with handles; **session VWAP** (Day/Week/24h anchors, multi-plot) / **Bars** (volume|delta intensity) / **Count** (buy vs sell trade-count dual histogram); layer visibility persisted (`flow-terminal-chart-layers-v1`); drawings (+styles) persisted per symbol
-2. **Order Book / DOM** — bids/asks, depth bars, spread; chart↔DOM hover cohesion (shared `hoverPrice` — chart crosshair highlights nearest ladder row; DOM row hover draws a subtle chart price line)
-3. **Trades Tape** — scrolling aggressor buys/sells with size highlighting
+2. **Order Book / DOM** — bids/asks, depth bars, spread; chart↔DOM↔tape hover cohesion (shared `hoverPrice` — chart crosshair highlights nearest ladder row; DOM/tape row hover draws a subtle chart price line)
+3. **Trades Tape** — scrolling aggressor buys/sells with size highlighting; row hover syncs chart line + DOM highlight; click briefly flashes that price on the chart
 4. **Order Book Heatmap** — canvas time × price liquidity
 5. **CVD / Volume Delta** — cumulative delta line + per-bar histogram
 6. **Volume Profile** — VPVR-style buy/sell profile with POC
