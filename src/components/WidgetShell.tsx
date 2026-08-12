@@ -11,7 +11,7 @@ interface Props {
 export function WidgetShell({ title, onClose, actions, children, className }: Props) {
   return (
     <div
-      className={`widget-shell flex h-full min-h-0 flex-col overflow-hidden rounded-[2px] border border-terminal-border bg-terminal-panel shadow-panel ${className ?? ''}`}
+      className={`widget-shell flex h-full min-h-0 flex-col overflow-hidden border border-terminal-border bg-terminal-panel ${className ?? ''}`}
     >
       <div className="drag-handle group flex h-6 shrink-0 cursor-grab items-center justify-between border-b border-terminal-border bg-[#080a0e] px-1.5 active:cursor-grabbing">
         <div className="flex min-w-0 items-center gap-1.5">
@@ -22,14 +22,15 @@ export function WidgetShell({ title, onClose, actions, children, className }: Pr
             {title}
           </span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           {actions}
           {onClose && (
             <button
               type="button"
               onClick={onClose}
-              className="rounded-[2px] px-1 py-0.5 font-mono text-[11px] leading-none text-zinc-600 opacity-50 transition hover:bg-white/[0.04] hover:text-zinc-300 hover:opacity-100 group-hover:opacity-100"
+              className="flex h-5 w-5 items-center justify-center rounded-[2px] font-mono text-[12px] leading-none text-zinc-600 opacity-0 transition hover:bg-white/[0.05] hover:text-zinc-200 group-hover:opacity-100"
               title="Remove widget"
+              aria-label={`Remove ${title}`}
             >
               ×
             </button>

@@ -5,7 +5,7 @@
   --color-terminal-bg: #050608;
   --color-terminal-panel: #0a0c10;
   --color-terminal-elevated: #0e1116;
-  --color-terminal-border: #161a22;
+  --color-terminal-border: #151922;
   --color-terminal-border-strong: #222833;
   --color-terminal-muted: #6b7280;
   --color-terminal-label: #565d6a;
@@ -14,7 +14,7 @@
   --color-accent: #f0b90b;
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  --shadow-panel: 0 0 0 1px rgba(255, 255, 255, 0.02), 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 0 0 1px rgba(0, 0, 0, 0.35);
 }
 
 html,
@@ -86,31 +86,43 @@ select {
   opacity: 0.7;
 }
 
+.terminal-workspace {
+  background:
+    linear-gradient(180deg, #06080c 0%, #050608 48px, #050608 100%);
+}
+
+.topbar select option {
+  background: #0a0c10;
+  color: #e4e4e7;
+}
+
 .widget-shell {
+  border-radius: 0;
+  box-shadow: var(--shadow-panel);
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 .widget-shell:hover {
-  border-color: #1e2430;
+  border-color: #1c222d;
 }
 .widget-shell:focus-within {
   border-color: #2a3342;
-  box-shadow: 0 0 0 1px rgba(14, 203, 129, 0.08);
+  box-shadow: var(--shadow-panel), 0 0 0 1px rgba(14, 203, 129, 0.07);
 }
 
 .drag-grip {
   display: inline-grid;
   grid-template-columns: repeat(2, 2px);
   gap: 2px;
-  opacity: 0.35;
+  opacity: 0.28;
 }
 .drag-grip span {
   width: 2px;
   height: 2px;
   border-radius: 50%;
-  background: #8b93a7;
+  background: #7a8396;
 }
 .drag-handle:hover .drag-grip {
-  opacity: 0.7;
+  opacity: 0.65;
 }
 
 .depth-row {
