@@ -33,7 +33,7 @@ npm run preview
 
 ## Widgets
 
-1. **Chart** — candles + volume; toggles for Heatmap, VPVR Profile, trade Bubbles, VWAP, CVD, liquidation markers; drawing tools (H-Line / Trend / Clear) persisted per symbol
+1. **Chart** — candles + volume; toggles for Heatmap, VPVR Profile, trade Bubbles, VWAP, CVD, liquidation markers; drawing tools (H-Line / Trend / Rect / Fib / Clear) persisted per symbol
 2. **Order Book / DOM** — bids/asks, depth bars, spread
 3. **Trades Tape** — scrolling aggressor buys/sells with size highlighting
 4. **Order Book Heatmap** — canvas time × price liquidity
@@ -104,6 +104,8 @@ Toolbar (top-right of the chart widget):
 
 - **H-Line** — click the chart to place a horizontal at that price (price label on the right)
 - **Trend** — two clicks for a trend line (rubber-band preview)
+- **Rect** — two clicks for opposite corners of a rectangle
+- **Fib** — two clicks for a Fibonacci retracement (levels 0 / 0.236 / 0.382 / 0.5 / 0.618 / 0.786 / 1) with price labels
 - **Clear** — remove all drawings for the active symbol
 
 Click a drawing to select it (amber highlight). Press **Delete** / **Backspace**, or the small **×**, to remove one. **Esc** cancels the active tool / draft / selection. Drawings persist in `localStorage` keyed by symbol and redraw above Heatmap / Profile / Bubbles.

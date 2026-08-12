@@ -23,7 +23,7 @@ import {
   setSymbolDrawings,
   type ChartDrawing,
   type DrawingTool,
-  type TrendDraft,
+  type TwoPointDraft,
 } from '../lib/chartDrawings';
 import { useTerminalStore } from '../store/useTerminalStore';
 import type { Candle, HeatmapFrame, Trade, VolumeProfileBin } from '../types/market';
@@ -107,7 +107,7 @@ export function ChartWidget() {
   const toolRef = useRef<DrawingTool>(null);
   const drawingsRef = useRef<ChartDrawing[]>([]);
   const selectedIdRef = useRef<string | null>(null);
-  const draftRef = useRef<TrendDraft | null>(null);
+  const draftRef = useRef<TwoPointDraft | null>(null);
   const symbolRef = useRef(useTerminalStore.getState().symbol);
 
   const feed = useTerminalStore((s) => s.feed);
@@ -600,7 +600,7 @@ export function ChartWidget() {
         return;
       }
 
-      if (active === 'trend') {
+      if (active === 'trend' || active === 'rect' || active === 'fib') {
         const timeVal = chart.timeScale().coordinateToTime(x);
         // Prefer chart time; fall back to logical mapping via param.time.
         let tSec: number | null = null;
@@ -609,8 +609,8 @@ export function ChartWidget() {
         if (tSec == null || !Number.isFinite(tSec)) return;
 
         const draft = draftRef.current;
-        if (!draft) {
-          draftRef.current = { t1: tSec, p1: priceN };
+        if (!draft || draft.type !== active) {
+          draftRef.current = { type: active, t1: tSec, p1: priceN };
           setSelectedId(null);
           selectedIdRef.current = null;
           scheduleOverlays();
@@ -621,7 +621,7 @@ export function ChartWidget() {
           ...drawingsRef.current,
           {
             id: newDrawingId(),
-            type: 'trend',
+            type: active,
             t1: draft.t1,
             p1: draft.p1,
             t2: tSec,
@@ -837,7 +837,9 @@ export function ChartWidget() {
   };
 
   const cursorClass =
-    tool === 'hline' || tool === 'trend' ? 'cursor-crosshair' : '';
+    tool === 'hline' || tool === 'trend' || tool === 'rect' || tool === 'fib'
+      ? 'cursor-crosshair'
+      : '';
 
   return (
     <div className={`relative flex h-full flex-col ${cursorClass}`}>
@@ -864,6 +866,18 @@ export function ChartWidget() {
           title="Trend line — two clicks to place"
         />
         <Toggle
+          label="Rect"
+          on={tool === 'rect'}
+          onClick={() => toggleTool('rect')}
+          title="Rectangle — two clicks for opposite corners"
+        />
+        <Toggle
+          label="Fib"
+          on={tool === 'fib'}
+          onClick={() => toggleTool('fib')}
+          title="Fib retracement — two clicks (0→1), levels 0/0.236/0.382/0.5/0.618/0.786/1"
+        />
+        <Toggle
           label="Clear"
           on={false}
           onClick={clearAllDrawings}
@@ -876,7 +890,11 @@ export function ChartWidget() {
         <div className="pointer-events-none absolute left-1/2 top-8 z-10 -translate-x-1/2 rounded-[2px] border border-terminal-border bg-black/60 px-2 py-0.5 text-[10px] uppercase tracking-wider text-zinc-400 backdrop-blur-[2px]">
           {tool === 'hline'
             ? 'Click to place horizontal'
-            : 'Trend — click start, then end · Esc cancel'}
+            : tool === 'trend'
+              ? 'Trend — click start, then end · Esc cancel'
+              : tool === 'rect'
+                ? 'Rect — click opposite corners · Esc cancel'
+                : 'Fib — click 0, then 1 · Esc cancel'}
         </div>
       )}
 
