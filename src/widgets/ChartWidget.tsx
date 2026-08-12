@@ -34,7 +34,7 @@ export function ChartWidget() {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#0d1118' },
+        background: { type: ColorType.Solid, color: '#0a0e15' },
         textColor: '#8b93a7',
         fontFamily: 'JetBrains Mono, ui-monospace, monospace',
         fontSize: 11,
@@ -49,12 +49,12 @@ export function ChartWidget() {
     });
 
     const candles = chart.addSeries(CandlestickSeries, {
-      upColor: '#22c55e',
-      downColor: '#ef4444',
-      borderUpColor: '#22c55e',
-      borderDownColor: '#ef4444',
-      wickUpColor: '#22c55e',
-      wickDownColor: '#ef4444',
+      upColor: '#3dd68c',
+      downColor: '#f07178',
+      borderUpColor: '#3dd68c',
+      borderDownColor: '#f07178',
+      wickUpColor: '#3dd68c',
+      wickDownColor: '#f07178',
     });
 
     const volume = chart.addSeries(HistogramSeries, {
@@ -124,14 +124,17 @@ export function ChartWidget() {
       feed.candles.map((c) => ({
         time: c.time as Time,
         value: c.volume,
-        color: c.close >= c.open ? 'rgba(34,197,94,0.45)' : 'rgba(239,68,68,0.45)',
+        color: c.close >= c.open ? 'rgba(61,214,140,0.4)' : 'rgba(240,113,120,0.4)',
       })),
     );
 
     if (vwapRef.current) {
       if (showVwap) {
+        const series = feed.vwapSeries?.length
+          ? feed.vwapSeries
+          : feed.candles.map((c) => ({ time: c.time, value: feed.vwap }));
         vwapRef.current.setData(
-          feed.candles.map((c) => ({ time: c.time as Time, value: feed.vwap })),
+          series.map((p) => ({ time: p.time as Time, value: p.value })),
         );
       } else {
         vwapRef.current.setData([]);

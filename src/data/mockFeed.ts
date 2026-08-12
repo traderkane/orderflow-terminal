@@ -1,6 +1,7 @@
 import type {
   Candle,
   CvdPoint,
+  VwapPoint,
   ExchangeId,
   HeatmapFrame,
   Liquidation,
@@ -41,6 +42,7 @@ export interface FeedSnapshot {
   volumeProfile: VolumeProfileBin[];
   stats: MarketStats;
   vwap: number;
+  vwapSeries: VwapPoint[];
 }
 
 export type FeedListener = (snap: FeedSnapshot) => void;
@@ -284,7 +286,7 @@ export class MockFeed {
   }
 
   private buildBook(): OrderBook {
-    const levels = 18;
+    const levels = 22;
     const tick = this.symbol === 'BTC/USD' ? 0.5 : 0.05;
     const bids = [];
     const asks = [];
@@ -322,6 +324,15 @@ export class MockFeed {
       .sort((a, b) => a.price - b.price)
       .slice(-60);
 
+    let runPv = 0;
+    let runVv = 0;
+    const vwapSeries: VwapPoint[] = this.candles.map((c) => {
+      const typical = (c.high + c.low + c.close) / 3;
+      runPv += typical * c.volume;
+      runVv += c.volume;
+      return { time: c.time, value: runVv ? runPv / runVv : c.close };
+    });
+
     return {
       symbol: this.symbol,
       candles: [...this.candles],
@@ -332,6 +343,7 @@ export class MockFeed {
       heatmap: [...this.heatmap],
       volumeProfile: profile,
       vwap: vv ? pv / vv : last,
+      vwapSeries,
       stats: {
         last,
         change24h: change,

@@ -8,7 +8,7 @@ export function OrderBookWidget() {
   const book = useTerminalStore((s) => s.feed?.book);
 
   if (!book) {
-    return <div className="p-3 text-xs text-zinc-500">Waiting for book…</div>;
+    return <div className="p-2 text-[11px] text-zinc-500">Waiting for book…</div>;
   }
 
   const maxTotal = Math.max(
@@ -16,12 +16,12 @@ export function OrderBookWidget() {
     book.asks[book.asks.length - 1]?.total ?? 1,
   );
 
-  const asks = [...book.asks].slice(0, 14).reverse();
-  const bids = book.bids.slice(0, 14);
+  const asks = [...book.asks].slice(0, 16).reverse();
+  const bids = book.bids.slice(0, 16);
 
   return (
-    <div className="flex h-full flex-col font-mono text-[11px]">
-      <div className="grid grid-cols-3 border-b border-terminal-border px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-500">
+    <div className="flex h-full flex-col font-mono text-[10px] leading-tight">
+      <div className="grid grid-cols-3 border-b border-terminal-border px-1.5 py-1 text-[9px] uppercase tracking-wider text-zinc-500">
         <span>Price</span>
         <span className="text-right">Size</span>
         <span className="text-right">Total</span>
@@ -30,10 +30,10 @@ export function OrderBookWidget() {
         {asks.map((lvl) => (
           <Row key={`a-${lvl.price}`} {...lvl} maxTotal={maxTotal} side="ask" />
         ))}
-        <div className="flex items-center justify-between border-y border-terminal-border bg-[#121722] px-2 py-1.5">
-          <span className="text-zinc-400">Spread</span>
+        <div className="flex items-center justify-between border-y border-terminal-border bg-[#10151f] px-1.5 py-1">
+          <span className="text-[9px] uppercase tracking-wider text-zinc-500">Spr</span>
           <span className="text-zinc-100">{fmt(book.spread, 2)}</span>
-          <span className="text-zinc-500">{fmt(book.mid, 2)}</span>
+          <span className="text-zinc-400">{fmt(book.mid, 2)}</span>
         </div>
         {bids.map((lvl) => (
           <Row key={`b-${lvl.price}`} {...lvl} maxTotal={maxTotal} side="bid" />
@@ -57,9 +57,9 @@ function Row({
   side: 'bid' | 'ask';
 }) {
   const pct = Math.min(100, (total / maxTotal) * 100);
-  const color = side === 'bid' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)';
+  const color = side === 'bid' ? 'rgba(61,214,140,0.16)' : 'rgba(240,113,120,0.16)';
   return (
-    <div className="relative grid grid-cols-3 px-2 py-[3px]">
+    <div className="relative grid grid-cols-3 px-1.5 py-[2px]">
       <div
         className="absolute inset-y-0 right-0"
         style={{ width: `${pct}%`, background: color }}

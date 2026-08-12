@@ -12,9 +12,9 @@ function Stat({
   const color =
     accent === 'up' ? 'text-up' : accent === 'down' ? 'text-down' : 'text-zinc-100';
   return (
-    <div className="rounded border border-terminal-border bg-[#0d1118] px-3 py-2">
-      <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">{label}</div>
-      <div className={`mt-1 font-mono text-sm ${color}`}>{value}</div>
+    <div className="min-w-0 rounded-sm border border-terminal-border bg-[#0a0e15] px-2.5 py-1.5">
+      <div className="truncate text-[9px] uppercase tracking-[0.12em] text-zinc-500">{label}</div>
+      <div className={`mt-0.5 truncate font-mono text-xs ${color}`}>{value}</div>
     </div>
   );
 }
@@ -25,29 +25,29 @@ export function StatsWidget() {
   const exchanges = useTerminalStore((s) => s.exchanges);
 
   if (!stats) {
-    return <div className="p-3 text-xs text-zinc-500">Waiting for stats…</div>;
+    return <div className="p-2 text-[11px] text-zinc-500">Waiting for stats…</div>;
   }
 
   const up = stats.change24h >= 0;
 
   return (
-    <div className="grid h-full grid-cols-2 gap-2 overflow-auto p-2 md:grid-cols-3">
+    <div className="grid h-full auto-rows-fr grid-cols-4 gap-1.5 overflow-auto p-1.5 md:grid-cols-6 xl:grid-cols-12">
       <Stat label="Symbol" value={symbol} />
       <Stat
         label="Last"
         value={stats.last.toLocaleString(undefined, { maximumFractionDigits: 2 })}
       />
       <Stat
-        label="24h Change"
+        label="24h %"
         value={`${up ? '+' : ''}${stats.changePct24h.toFixed(2)}%`}
         accent={up ? 'up' : 'down'}
       />
       <Stat
-        label="24h High"
+        label="High"
         value={stats.high24h.toLocaleString(undefined, { maximumFractionDigits: 2 })}
       />
       <Stat
-        label="24h Low"
+        label="Low"
         value={stats.low24h.toLocaleString(undefined, { maximumFractionDigits: 2 })}
       />
       <Stat label="Volume" value={stats.volume24h.toLocaleString(undefined, { maximumFractionDigits: 1 })} />
@@ -57,13 +57,13 @@ export function StatsWidget() {
         accent={stats.fundingRate >= 0 ? 'up' : 'down'}
       />
       <Stat
-        label="Open Interest"
+        label="OI"
         value={stats.openInterest.toLocaleString(undefined, { maximumFractionDigits: 0 })}
       />
       <Stat label="Spread" value={stats.spread.toFixed(2)} />
       <Stat label="Mid" value={stats.mid.toFixed(2)} />
-      <Stat label="Venues" value={exchanges.join(' · ')} />
-      <Stat label="Feed" value="Mock / Replay" />
+      <Stat label="Venues" value={exchanges.map((e) => e.slice(0, 3)).join('·')} />
+      <Stat label="Feed" value="Mock" />
     </div>
   );
 }

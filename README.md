@@ -52,7 +52,7 @@ Widgets subscribe through the Zustand store and update live.
 
 - Drag widgets from the header handle; resize from corners
 - Layout + widget set persist in `localStorage`
-- **Reset layout** restores the default 8-panel arrangement
+- **Reset layout** restores the chart-dominant pro workspace (book + tape right, heatmap/CVD/profile/liqs under chart, stats strip)
 - **+ Widget** launcher adds another panel instance
 
 ## Roadmap note

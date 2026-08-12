@@ -23,7 +23,7 @@ export function HeatmapWidget() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#0d1118';
+    ctx.fillStyle = '#0a0e15';
     ctx.fillRect(0, 0, w, h);
 
     if (!heatmap.length) {
@@ -48,8 +48,8 @@ export function HeatmapWidget() {
         const isBid = bid >= ask;
         const alpha = 0.15 + intensity * 0.75;
         ctx.fillStyle = isBid
-          ? `rgba(34, 197, 94, ${alpha})`
-          : `rgba(239, 68, 68, ${alpha})`;
+          ? `rgba(61, 214, 140, ${alpha})`
+          : `rgba(240, 113, 120, ${alpha})`;
         // y=0 is low price at bottom
         const py = h - (y + 1) * cellH;
         ctx.fillRect(x * cellW, py, Math.ceil(cellW) + 0.5, Math.ceil(cellH) + 0.5);

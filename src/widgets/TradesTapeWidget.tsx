@@ -4,12 +4,12 @@ export function TradesTapeWidget() {
   const trades = useTerminalStore((s) => s.feed?.trades) ?? [];
 
   return (
-    <div className="flex h-full flex-col font-mono text-[11px]">
-      <div className="grid grid-cols-[1fr_1fr_1fr_auto] border-b border-terminal-border px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-500">
+    <div className="flex h-full flex-col font-mono text-[10px] leading-tight">
+      <div className="grid grid-cols-[1fr_1fr_1fr_auto] border-b border-terminal-border px-1.5 py-1 text-[9px] uppercase tracking-wider text-zinc-500">
         <span>Time</span>
         <span className="text-right">Price</span>
         <span className="text-right">Size</span>
-        <span className="pl-2 text-right">Ex</span>
+        <span className="pl-1.5 text-right">Ex</span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         {trades.map((t) => {
@@ -18,7 +18,7 @@ export function TradesTapeWidget() {
           return (
             <div
               key={t.id}
-              className={`grid grid-cols-[1fr_1fr_1fr_auto] px-2 py-[3px] ${
+              className={`grid grid-cols-[1fr_1fr_1fr_auto] px-1.5 py-[2px] ${
                 huge ? 'bg-amber-500/10' : big ? 'bg-white/[0.03]' : ''
               }`}
             >
@@ -35,12 +35,12 @@ export function TradesTapeWidget() {
               </span>
               <span
                 className={`text-right ${
-                  huge ? 'font-bold text-amber-300' : big ? 'text-zinc-100' : 'text-zinc-300'
+                  huge ? 'font-semibold text-amber-300' : big ? 'text-zinc-100' : 'text-zinc-300'
                 }`}
               >
                 {t.size.toFixed(3)}
               </span>
-              <span className="pl-2 text-right text-[10px] text-zinc-500">{t.exchange.slice(0, 3)}</span>
+              <span className="pl-1.5 text-right text-[9px] text-zinc-500">{t.exchange.slice(0, 3)}</span>
             </div>
           );
         })}

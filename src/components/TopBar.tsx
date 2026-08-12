@@ -20,9 +20,9 @@ export function TopBar() {
   const up = (stats?.change24h ?? 0) >= 0;
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-terminal-border bg-[#0b0e14] px-3">
+    <header className="flex h-11 shrink-0 items-center gap-2.5 border-b border-terminal-border bg-[#080b11] px-2.5">
       <div className="flex items-center gap-2 pr-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded bg-emerald-500/15 text-sm font-bold text-emerald-400">
+        <div className="flex h-6 w-6 items-center justify-center rounded-sm bg-emerald-500/15 text-xs font-bold text-emerald-400">
           Φ
         </div>
         <div className="leading-tight">

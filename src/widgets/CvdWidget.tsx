@@ -20,7 +20,7 @@ export function CvdWidget() {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#0d1118' },
+        background: { type: ColorType.Solid, color: '#0a0e15' },
         textColor: '#8b93a7',
         fontSize: 11,
         fontFamily: 'JetBrains Mono, ui-monospace, monospace',
@@ -71,7 +71,7 @@ export function CvdWidget() {
       cvd.map((p) => ({
         time: p.time as Time,
         value: p.delta,
-        color: p.delta >= 0 ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.7)',
+        color: p.delta >= 0 ? 'rgba(61,214,140,0.7)' : 'rgba(240,113,120,0.7)',
       })),
     );
   }, [cvd]);

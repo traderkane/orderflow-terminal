@@ -10,8 +10,8 @@ import type {
   WidgetType,
 } from '../types/market';
 
-const LAYOUT_KEY = 'flow-terminal-layout-v1';
-const WIDGETS_KEY = 'flow-terminal-widgets-v1';
+const LAYOUT_KEY = 'flow-terminal-layout-v2';
+const WIDGETS_KEY = 'flow-terminal-widgets-v2';
 
 const DEFAULT_WIDGETS: WidgetInstance[] = [
   { id: 'chart', type: 'chart' },
@@ -25,14 +25,14 @@ const DEFAULT_WIDGETS: WidgetInstance[] = [
 ];
 
 const DEFAULT_LAYOUT: LayoutItem[] = [
-  { i: 'chart', x: 0, y: 0, w: 6, h: 10, minW: 3, minH: 6 },
-  { i: 'orderbook', x: 6, y: 0, w: 3, h: 10, minW: 2, minH: 5 },
-  { i: 'trades', x: 9, y: 0, w: 3, h: 10, minW: 2, minH: 5 },
-  { i: 'heatmap', x: 0, y: 10, w: 4, h: 7, minW: 3, minH: 4 },
-  { i: 'cvd', x: 4, y: 10, w: 4, h: 7, minW: 3, minH: 4 },
-  { i: 'volumeProfile', x: 8, y: 10, w: 4, h: 7, minW: 2, minH: 4 },
-  { i: 'liquidations', x: 0, y: 17, w: 6, h: 6, minW: 3, minH: 4 },
-  { i: 'stats', x: 6, y: 17, w: 6, h: 6, minW: 3, minH: 3 },
+  { i: 'chart', x: 0, y: 0, w: 7, h: 12, minW: 4, minH: 7 },
+  { i: 'orderbook', x: 7, y: 0, w: 3, h: 12, minW: 2, minH: 6 },
+  { i: 'trades', x: 10, y: 0, w: 2, h: 12, minW: 2, minH: 6 },
+  { i: 'heatmap', x: 0, y: 12, w: 4, h: 5, minW: 3, minH: 4 },
+  { i: 'cvd', x: 4, y: 12, w: 3, h: 5, minW: 2, minH: 4 },
+  { i: 'volumeProfile', x: 7, y: 12, w: 3, h: 5, minW: 2, minH: 4 },
+  { i: 'liquidations', x: 10, y: 12, w: 2, h: 5, minW: 2, minH: 3 },
+  { i: 'stats', x: 0, y: 17, w: 12, h: 3, minW: 4, minH: 2 },
 ];
 
 function loadJson<T>(key: string, fallback: T): T {

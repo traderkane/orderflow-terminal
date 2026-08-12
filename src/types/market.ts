@@ -43,6 +43,11 @@ export interface Liquidation {
   exchange: ExchangeId;
 }
 
+export interface VwapPoint {
+  time: number;
+  value: number;
+}
+
 export interface CvdPoint {
   time: number;
   value: number;
