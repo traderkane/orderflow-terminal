@@ -147,6 +147,7 @@ interface TerminalState {
   showBubbles: boolean;
   chartMaximized: boolean;
   launcherOpen: boolean;
+  commandPaletteOpen: boolean;
   openPanel: PanelId;
 
   /** Shared chart↔DOM↔tape hover price (null when not hovering). */
@@ -192,6 +193,7 @@ interface TerminalState {
   setChartMaximized: (v: boolean) => void;
   toggleChartMaximized: () => void;
   setLauncherOpen: (v: boolean) => void;
+  setCommandPaletteOpen: (v: boolean) => void;
   setOpenPanel: (panel: PanelId) => void;
 
   addAlert: (input: {
@@ -337,6 +339,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     showBubbles: initialLayers.bubbles,
     chartMaximized: false,
     launcherOpen: false,
+    commandPaletteOpen: false,
     openPanel: null,
 
     hoverPrice: null,
@@ -501,9 +504,15 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     setChartMaximized: (chartMaximized) => set({ chartMaximized }),
     toggleChartMaximized: () =>
       set((s) => ({ chartMaximized: !s.chartMaximized })),
-    setLauncherOpen: (launcherOpen) => set({ launcherOpen, openPanel: launcherOpen ? null : get().openPanel }),
+    setLauncherOpen: (launcherOpen) => set({ launcherOpen, openPanel: launcherOpen ? null : get().openPanel, commandPaletteOpen: launcherOpen ? false : get().commandPaletteOpen }),
+    setCommandPaletteOpen: (commandPaletteOpen) =>
+      set({
+        commandPaletteOpen,
+        launcherOpen: commandPaletteOpen ? false : get().launcherOpen,
+        openPanel: commandPaletteOpen ? null : get().openPanel,
+      }),
     setOpenPanel: (openPanel) =>
-      set({ openPanel, launcherOpen: openPanel ? false : get().launcherOpen }),
+      set({ openPanel, launcherOpen: openPanel ? false : get().launcherOpen, commandPaletteOpen: openPanel ? false : get().commandPaletteOpen }),
 
     setHoverPrice: (price, source = null) => {
       const cur = get();

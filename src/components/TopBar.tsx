@@ -28,6 +28,7 @@ export function TopBar() {
   const setSpeed = useTerminalStore((s) => s.setSpeed);
   const toggleFeed = useTerminalStore((s) => s.toggleFeed);
   const resetLayout = useTerminalStore((s) => s.resetLayout);
+  const setCommandPaletteOpen = useTerminalStore((s) => s.setCommandPaletteOpen);
   const stats = useTerminalStore((s) => s.feed?.stats);
 
   const up = (stats?.change24h ?? 0) >= 0;
@@ -171,6 +172,15 @@ export function TopBar() {
         )}
 
         <div className="mx-1 h-3.5 w-px shrink-0 bg-terminal-border" />
+
+        <button
+          type="button"
+          onClick={() => setCommandPaletteOpen(true)}
+          className={ghostBtn}
+          title="Command palette (⌘K / Ctrl+K)"
+        >
+          ⌘K
+        </button>
 
         <button
           type="button"

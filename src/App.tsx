@@ -6,6 +6,7 @@ import { TerminalGrid } from './components/TerminalGrid';
 import { WidgetLauncher } from './components/WidgetLauncher';
 import { AlertsDrawer } from './components/AlertsDrawer';
 import { LayoutsDrawer } from './components/LayoutsDrawer';
+import { CommandPalette } from './components/CommandPalette';
 import { ToastStack } from './components/ToastStack';
 import { useTerminalStore } from './store/useTerminalStore';
 
@@ -13,19 +14,29 @@ export default function App() {
   const initFeed = useTerminalStore((s) => s.initFeed);
   const setLauncherOpen = useTerminalStore((s) => s.setLauncherOpen);
   const setOpenPanel = useTerminalStore((s) => s.setOpenPanel);
+  const setCommandPaletteOpen = useTerminalStore((s) => s.setCommandPaletteOpen);
 
   useEffect(() => initFeed(), [initFeed]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setCommandPaletteOpen(!useTerminalStore.getState().commandPaletteOpen);
+        return;
+      }
       if (e.key === 'Escape') {
+        if (useTerminalStore.getState().commandPaletteOpen) {
+          setCommandPaletteOpen(false);
+          return;
+        }
         setLauncherOpen(false);
         setOpenPanel(null);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setLauncherOpen, setOpenPanel]);
+  }, [setLauncherOpen, setOpenPanel, setCommandPaletteOpen]);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-terminal-bg text-zinc-200">
@@ -38,6 +49,7 @@ export default function App() {
       <WidgetLauncher />
       <AlertsDrawer />
       <LayoutsDrawer />
+      <CommandPalette />
       <ToastStack />
     </div>
   );
