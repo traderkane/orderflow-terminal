@@ -33,7 +33,7 @@ npm run preview
 
 ## Widgets
 
-1. **Chart** — candles + volume; toggles for Heatmap, VPVR Profile, trade Bubbles, VWAP, CVD, liquidation markers
+1. **Chart** — candles + volume; toggles for Heatmap, VPVR Profile, trade Bubbles, VWAP, CVD, liquidation markers; drawing tools (H-Line / Trend / Clear) persisted per symbol
 2. **Order Book / DOM** — bids/asks, depth bars, spread
 3. **Trades Tape** — scrolling aggressor buys/sells with size highlighting
 4. **Order Book Heatmap** — canvas time × price liquidity
@@ -97,6 +97,16 @@ Top bar **Alerts** opens a drawer to create / list / delete alerts (persisted in
 - Built-in presets: **Scalp** (chart + DOM + tape), **Profile** (chart + TPO + VPVR + footprint)
 - **Reset layout** restores the chart-dominant pro workspace
 - **+ Widget** launcher adds another panel instance
+
+## Chart drawings
+
+Toolbar (top-right of the chart widget):
+
+- **H-Line** — click the chart to place a horizontal at that price (price label on the right)
+- **Trend** — two clicks for a trend line (rubber-band preview)
+- **Clear** — remove all drawings for the active symbol
+
+Click a drawing to select it (amber highlight). Press **Delete** / **Backspace**, or the small **×**, to remove one. **Esc** cancels the active tool / draft / selection. Drawings persist in `localStorage` keyed by symbol and redraw above Heatmap / Profile / Bubbles.
 
 ## License
 

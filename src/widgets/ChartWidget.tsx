@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   CandlestickSeries,
   ColorType,
@@ -8,9 +8,23 @@ import {
   LineSeries,
   type IChartApi,
   type ISeriesApi,
+  type MouseEventParams,
   type SeriesMarker,
   type Time,
 } from 'lightweight-charts';
+import {
+  deleteControlAnchor,
+  drawChartDrawings,
+  getSymbolDrawings,
+  hitTestDrawing,
+  loadDrawings,
+  newDrawingId,
+  saveDrawings,
+  setSymbolDrawings,
+  type ChartDrawing,
+  type DrawingTool,
+  type TrendDraft,
+} from '../lib/chartDrawings';
 import { useTerminalStore } from '../store/useTerminalStore';
 import type { Candle, HeatmapFrame, Trade, VolumeProfileBin } from '../types/market';
 
@@ -85,7 +99,19 @@ export function ChartWidget() {
     bubbles: true,
   });
 
+  const [tool, setTool] = useState<DrawingTool>(null);
+  const [drawings, setDrawings] = useState<ChartDrawing[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [deletePos, setDeletePos] = useState<{ x: number; y: number } | null>(null);
+
+  const toolRef = useRef<DrawingTool>(null);
+  const drawingsRef = useRef<ChartDrawing[]>([]);
+  const selectedIdRef = useRef<string | null>(null);
+  const draftRef = useRef<TrendDraft | null>(null);
+  const symbolRef = useRef(useTerminalStore.getState().symbol);
+
   const feed = useTerminalStore((s) => s.feed);
+  const symbol = useTerminalStore((s) => s.symbol);
   const showVwap = useTerminalStore((s) => s.showVwap);
   const showCvdOverlay = useTerminalStore((s) => s.showCvdOverlay);
   const showLiqMarkers = useTerminalStore((s) => s.showLiqMarkers);
@@ -103,6 +129,36 @@ export function ChartWidget() {
     heatmap: showHeatmap,
     profile: showProfile,
     bubbles: showBubbles,
+  };
+  toolRef.current = tool;
+  drawingsRef.current = drawings;
+  selectedIdRef.current = selectedId;
+  symbolRef.current = symbol;
+
+  const persistDrawings = (next: ChartDrawing[]) => {
+    drawingsRef.current = next;
+    setDrawings(next);
+    const all = loadDrawings();
+    saveDrawings(setSymbolDrawings(all, symbolRef.current, next));
+    scheduleOverlays();
+  };
+
+  const updateDeletePos = () => {
+    const chart = chartRef.current;
+    const series = candleRef.current;
+    const parent = containerRef.current;
+    const id = selectedIdRef.current;
+    if (!chart || !series || !parent || !id) {
+      setDeletePos(null);
+      return;
+    }
+    const d = drawingsRef.current.find((x) => x.id === id);
+    if (!d) {
+      setDeletePos(null);
+      return;
+    }
+    const anchor = deleteControlAnchor(d, chart, series, parent.clientWidth);
+    setDeletePos(anchor);
   };
 
   const drawHeatmapLayer = (
@@ -395,6 +451,19 @@ export function ChartWidget() {
     if (flags.heatmap) drawHeatmapLayer(ctx, chart, series, w);
     if (flags.bubbles) drawBubblesLayer(ctx, chart, series);
     if (flags.profile) drawProfileLayer(ctx, chart, series, h);
+
+    // Drawings sit above Heatmap / Bubbles / Profile.
+    drawChartDrawings(
+      ctx,
+      chart,
+      series,
+      w,
+      h,
+      drawingsRef.current,
+      selectedIdRef.current,
+      draftRef.current,
+    );
+    updateDeletePos();
   };
 
   const scheduleOverlays = () => {
@@ -404,6 +473,19 @@ export function ChartWidget() {
       drawOverlays();
     });
   };
+
+  // Load drawings when symbol changes.
+  useEffect(() => {
+    const next = getSymbolDrawings(loadDrawings(), symbol);
+    drawingsRef.current = next;
+    setDrawings(next);
+    setSelectedId(null);
+    selectedIdRef.current = null;
+    draftRef.current = null;
+    setDeletePos(null);
+    scheduleOverlays();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -496,6 +578,90 @@ export function ChartWidget() {
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
     chart.timeScale().subscribeVisibleTimeRangeChange(onRange);
 
+    const onClick = (param: MouseEventParams<Time>) => {
+      const series = candleRef.current;
+      if (!series || !param.point) return;
+
+      const { x, y } = param.point;
+      const price = series.coordinateToPrice(y);
+      if (price == null || !Number.isFinite(Number(price))) return;
+      const priceN = Number(price);
+
+      const active = toolRef.current;
+
+      if (active === 'hline') {
+        const next: ChartDrawing[] = [
+          ...drawingsRef.current,
+          { id: newDrawingId(), type: 'hline', price: priceN },
+        ];
+        setSelectedId(null);
+        selectedIdRef.current = null;
+        persistDrawings(next);
+        return;
+      }
+
+      if (active === 'trend') {
+        const timeVal = chart.timeScale().coordinateToTime(x);
+        // Prefer chart time; fall back to logical mapping via param.time.
+        let tSec: number | null = null;
+        if (typeof timeVal === 'number') tSec = timeVal;
+        else if (typeof param.time === 'number') tSec = param.time;
+        if (tSec == null || !Number.isFinite(tSec)) return;
+
+        const draft = draftRef.current;
+        if (!draft) {
+          draftRef.current = { t1: tSec, p1: priceN };
+          setSelectedId(null);
+          selectedIdRef.current = null;
+          scheduleOverlays();
+          return;
+        }
+
+        const next: ChartDrawing[] = [
+          ...drawingsRef.current,
+          {
+            id: newDrawingId(),
+            type: 'trend',
+            t1: draft.t1,
+            p1: draft.p1,
+            t2: tSec,
+            p2: priceN,
+          },
+        ];
+        draftRef.current = null;
+        setSelectedId(null);
+        selectedIdRef.current = null;
+        persistDrawings(next);
+        return;
+      }
+
+      // Select mode — hit-test drawings (does not block chart pan/zoom).
+      const hit = hitTestDrawing(drawingsRef.current, chart, series, x, y);
+      const id = hit?.id ?? null;
+      selectedIdRef.current = id;
+      setSelectedId(id);
+      scheduleOverlays();
+    };
+
+    const onCrosshair = (param: MouseEventParams<Time>) => {
+      const draft = draftRef.current;
+      if (!draft || !param.point) return;
+      const series = candleRef.current;
+      if (!series) return;
+      const price = series.coordinateToPrice(param.point.y);
+      if (price == null || !Number.isFinite(Number(price))) return;
+      let tSec: number | null = null;
+      const timeVal = chart.timeScale().coordinateToTime(param.point.x);
+      if (typeof timeVal === 'number') tSec = timeVal;
+      else if (typeof param.time === 'number') tSec = param.time;
+      if (tSec == null) return;
+      draftRef.current = { ...draft, t2: tSec, p2: Number(price) };
+      scheduleOverlays();
+    };
+
+    chart.subscribeClick(onClick);
+    chart.subscribeCrosshairMove(onCrosshair);
+
     const ro = new ResizeObserver(() => {
       if (!containerRef.current) return;
       chart.applyOptions({
@@ -508,6 +674,8 @@ export function ChartWidget() {
 
     return () => {
       ro.disconnect();
+      chart.unsubscribeClick(onClick);
+      chart.unsubscribeCrosshairMove(onCrosshair);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
       chart.timeScale().unsubscribeVisibleTimeRangeChange(onRange);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -593,10 +761,86 @@ export function ChartWidget() {
   useEffect(() => {
     scheduleOverlays();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showHeatmap, showProfile, showBubbles]);
+  }, [showHeatmap, showProfile, showBubbles, selectedId, drawings, tool]);
+
+  // Delete / Backspace removes selected; Escape cancels tool / draft / selection.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        if (toolRef.current || draftRef.current || selectedIdRef.current) {
+          e.stopPropagation();
+          setTool(null);
+          toolRef.current = null;
+          draftRef.current = null;
+          selectedIdRef.current = null;
+          setSelectedId(null);
+          scheduleOverlays();
+        }
+        return;
+      }
+
+      if (
+        (e.key === 'Delete' || e.key === 'Backspace') &&
+        selectedIdRef.current
+      ) {
+        e.preventDefault();
+        const id = selectedIdRef.current;
+        const next = drawingsRef.current.filter((d) => d.id !== id);
+        selectedIdRef.current = null;
+        setSelectedId(null);
+        persistDrawings(next);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggleTool = (next: DrawingTool) => {
+    draftRef.current = null;
+    if (tool === next) {
+      setTool(null);
+      toolRef.current = null;
+    } else {
+      setTool(next);
+      toolRef.current = next;
+      selectedIdRef.current = null;
+      setSelectedId(null);
+    }
+    scheduleOverlays();
+  };
+
+  const clearAllDrawings = () => {
+    draftRef.current = null;
+    selectedIdRef.current = null;
+    setSelectedId(null);
+    persistDrawings([]);
+  };
+
+  const deleteSelected = () => {
+    const id = selectedIdRef.current;
+    if (!id) return;
+    const next = drawingsRef.current.filter((d) => d.id !== id);
+    selectedIdRef.current = null;
+    setSelectedId(null);
+    persistDrawings(next);
+  };
+
+  const cursorClass =
+    tool === 'hline' || tool === 'trend' ? 'cursor-crosshair' : '';
 
   return (
-    <div className="relative flex h-full flex-col">
+    <div className={`relative flex h-full flex-col ${cursorClass}`}>
       <div className="absolute left-1.5 top-1.5 z-10 flex overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
         <Toggle label="Heatmap" on={showHeatmap} onClick={() => setShowHeatmap(!showHeatmap)} />
         <Toggle label="Profile" on={showProfile} onClick={() => setShowProfile(!showProfile)} />
@@ -605,25 +849,83 @@ export function ChartWidget() {
         <Toggle label="CVD" on={showCvdOverlay} onClick={() => setShowCvdOverlay(!showCvdOverlay)} />
         <Toggle label="Liqs" on={showLiqMarkers} onClick={() => setShowLiqMarkers(!showLiqMarkers)} />
       </div>
+
+      <div className="absolute right-1.5 top-1.5 z-10 flex overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
+        <Toggle
+          label="H-Line"
+          on={tool === 'hline'}
+          onClick={() => toggleTool('hline')}
+          title="Horizontal line — click chart to place"
+        />
+        <Toggle
+          label="Trend"
+          on={tool === 'trend'}
+          onClick={() => toggleTool('trend')}
+          title="Trend line — two clicks to place"
+        />
+        <Toggle
+          label="Clear"
+          on={false}
+          onClick={clearAllDrawings}
+          title="Clear all drawings for this symbol"
+          danger
+        />
+      </div>
+
+      {tool && (
+        <div className="pointer-events-none absolute left-1/2 top-8 z-10 -translate-x-1/2 rounded-[2px] border border-terminal-border bg-black/60 px-2 py-0.5 text-[10px] uppercase tracking-wider text-zinc-400 backdrop-blur-[2px]">
+          {tool === 'hline'
+            ? 'Click to place horizontal'
+            : 'Trend — click start, then end · Esc cancel'}
+        </div>
+      )}
+
       <div ref={containerRef} className="h-full w-full" />
       <canvas
         ref={overlayRef}
         className="pointer-events-none absolute inset-0 z-[1]"
         aria-hidden
       />
+
+      {selectedId && deletePos && (
+        <button
+          type="button"
+          title="Delete drawing"
+          onClick={deleteSelected}
+          className="absolute z-[3] flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[2px] border border-terminal-border-strong bg-black/80 text-[10px] leading-none text-zinc-300 hover:border-down/50 hover:text-down"
+          style={{ left: deletePos.x, top: deletePos.y }}
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }
 
-function Toggle({ label, on, onClick }: { label: string; on: boolean; onClick: () => void }) {
+function Toggle({
+  label,
+  on,
+  onClick,
+  title,
+  danger,
+}: {
+  label: string;
+  on: boolean;
+  onClick: () => void;
+  title?: string;
+  danger?: boolean;
+}) {
   return (
     <button
       type="button"
+      title={title}
       onClick={onClick}
       className={`px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
         on
           ? 'bg-up/15 text-up'
-          : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
+          : danger
+            ? 'text-zinc-500 hover:bg-down/10 hover:text-down'
+            : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
       }`}
     >
       {label}
