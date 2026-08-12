@@ -456,6 +456,202 @@ html[data-theme="light"] .tpo-count {
 
 
 
+
+/* VPVR / Volume Profile — dense MMT-like buy/sell histogram */
+.vpvr-widget {
+  background: transparent;
+}
+.vpvr-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.vpvr-row {
+  display: grid;
+  grid-template-columns: 4.6rem minmax(0, 1fr) 3.2rem;
+  align-items: center;
+  column-gap: 4px;
+  min-height: 13px;
+  padding: 0 2px;
+  border-radius: 1px;
+  border-left: 2px solid transparent;
+}
+.vpvr-row-va {
+  background: rgba(56, 189, 248, 0.045);
+  box-shadow: inset 0 -1px 0 rgba(56, 189, 248, 0.06);
+}
+.vpvr-row-poc {
+  background: rgba(240, 185, 11, 0.1);
+  border-left-color: #f0b90b;
+  box-shadow: inset 0 0 0 1px rgba(240, 185, 11, 0.18);
+}
+.vpvr-row-last {
+  background: color-mix(in srgb, rgba(255, 255, 255, 0.04) 70%, transparent);
+}
+.vpvr-row-poc.vpvr-row-last {
+  background: rgba(240, 185, 11, 0.14);
+}
+.vpvr-price {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  width: 100%;
+  padding-right: 2px;
+  color: #52525b;
+  font-size: 9px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.vpvr-price-poc {
+  color: #f0b90b;
+  font-weight: 700;
+}
+.vpvr-price-last {
+  color: #e4e4e7;
+  font-weight: 600;
+}
+.vpvr-price-va-edge {
+  color: #7dd3fc;
+  font-weight: 600;
+}
+.vpvr-last-caret {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  border-left: 4px solid #f0b90b;
+  flex-shrink: 0;
+}
+.vpvr-bar-wrap {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  min-height: 11px;
+  display: flex;
+  align-items: center;
+}
+.vpvr-poc-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+  background: linear-gradient(
+    90deg,
+    rgba(240, 185, 11, 0.75) 0%,
+    rgba(240, 185, 11, 0.35) 55%,
+    rgba(240, 185, 11, 0.08) 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+.vpvr-bar-track {
+  position: relative;
+  display: flex;
+  height: 9px;
+  min-width: 4px;
+  border-radius: 1px;
+  overflow: hidden;
+  background: rgba(24, 24, 27, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  z-index: 2;
+}
+.vpvr-bar-track-va {
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.18);
+}
+.vpvr-bar-track-poc {
+  height: 10px;
+  box-shadow: inset 0 0 0 1px rgba(240, 185, 11, 0.45);
+}
+.vpvr-bar-buy {
+  height: 100%;
+  background: color-mix(in srgb, var(--color-up) 72%, transparent);
+}
+.vpvr-bar-sell {
+  height: 100%;
+  background: color-mix(in srgb, var(--color-down) 72%, transparent);
+}
+.vpvr-bar-track-poc .vpvr-bar-buy {
+  background: color-mix(in srgb, var(--color-up) 85%, #f0b90b 8%);
+}
+.vpvr-bar-track-poc .vpvr-bar-sell {
+  background: color-mix(in srgb, var(--color-down) 85%, #f0b90b 8%);
+}
+.vpvr-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.vpvr-count {
+  min-width: 1.4rem;
+  text-align: right;
+  color: #3f3f46;
+  font-variant-numeric: tabular-nums;
+  font-size: 8px;
+}
+.vpvr-row-poc .vpvr-count,
+.vpvr-row-va .vpvr-count {
+  color: #52525b;
+}
+.vpvr-edge-tag {
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #38bdf8;
+  line-height: 1;
+}
+.vpvr-edge-poc {
+  color: #f0b90b;
+}
+.vpvr-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+}
+.vpvr-swatch-buy {
+  background: color-mix(in srgb, var(--color-up) 75%, transparent);
+}
+.vpvr-swatch-sell {
+  background: color-mix(in srgb, var(--color-down) 75%, transparent);
+}
+.vpvr-swatch-poc {
+  background: rgba(240, 185, 11, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(240, 185, 11, 0.55);
+}
+.vpvr-swatch-va {
+  background: rgba(56, 189, 248, 0.35);
+}
+
+html[data-theme="light"] .vpvr-row-va {
+  background: rgba(14, 165, 233, 0.06);
+}
+html[data-theme="light"] .vpvr-row-poc {
+  background: rgba(180, 130, 0, 0.1);
+}
+html[data-theme="light"] .vpvr-price {
+  color: #6b7280;
+}
+html[data-theme="light"] .vpvr-price-last {
+  color: #1a1d23;
+}
+html[data-theme="light"] .vpvr-count {
+  color: #9ca3af;
+}
+html[data-theme="light"] .vpvr-bar-track {
+  background: rgba(228, 230, 235, 0.95);
+}
+
+
 /* Chart maximize — fill workspace, hide sibling widgets (keep mounted) */
 .grid-chart-maximized {
   position: relative;
