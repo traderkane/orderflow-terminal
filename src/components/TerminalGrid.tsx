@@ -55,14 +55,14 @@ export function TerminalGrid() {
   return (
     <div
       ref={containerRef as RefObject<HTMLDivElement>}
-      className="min-h-0 flex-1 overflow-auto bg-terminal-bg p-1"
+      className="min-h-0 flex-1 overflow-auto bg-terminal-bg p-0.5"
     >
       {mounted && (
         <GridLayout
           className="layout"
           width={width}
           layout={layout}
-          gridConfig={{ cols: 12, rowHeight: 32, margin: [4, 4], containerPadding: [0, 0] }}
+          gridConfig={{ cols: 12, rowHeight: 28, margin: [2, 2], containerPadding: [2, 2] }}
           dragConfig={{ enabled: true, handle: '.drag-handle' }}
           resizeConfig={{ enabled: true }}
           onLayoutChange={(next) => {

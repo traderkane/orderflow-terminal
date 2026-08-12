@@ -13,6 +13,12 @@ import {
 } from 'lightweight-charts';
 import { useTerminalStore } from '../store/useTerminalStore';
 
+const UP = '#0ecb81';
+const DOWN = '#f6465d';
+const PANEL = '#0a0c10';
+const GRID = '#12161e';
+const TEXT = '#6b7280';
+
 export function ChartWidget() {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -34,27 +40,49 @@ export function ChartWidget() {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#0a0e15' },
-        textColor: '#8b93a7',
-        fontFamily: 'JetBrains Mono, ui-monospace, monospace',
-        fontSize: 11,
+        background: { type: ColorType.Solid, color: PANEL },
+        textColor: TEXT,
+        fontFamily: 'IBM Plex Mono, JetBrains Mono, ui-monospace, monospace',
+        fontSize: 10,
+        attributionLogo: false,
       },
       grid: {
-        vertLines: { color: '#1a2030' },
-        horzLines: { color: '#1a2030' },
+        vertLines: { color: GRID },
+        horzLines: { color: GRID },
       },
-      rightPriceScale: { borderColor: '#1f2937' },
-      timeScale: { borderColor: '#1f2937', timeVisible: true, secondsVisible: false },
-      crosshair: { mode: 0 },
+      rightPriceScale: {
+        borderColor: '#161a22',
+        scaleMargins: { top: 0.08, bottom: 0.18 },
+      },
+      timeScale: {
+        borderColor: '#161a22',
+        timeVisible: true,
+        secondsVisible: false,
+      },
+      crosshair: {
+        mode: 0,
+        vertLine: {
+          color: 'rgba(212,212,216,0.28)',
+          width: 1,
+          style: 2,
+          labelBackgroundColor: '#1a2030',
+        },
+        horzLine: {
+          color: 'rgba(212,212,216,0.28)',
+          width: 1,
+          style: 2,
+          labelBackgroundColor: '#1a2030',
+        },
+      },
     });
 
     const candles = chart.addSeries(CandlestickSeries, {
-      upColor: '#3dd68c',
-      downColor: '#f07178',
-      borderUpColor: '#3dd68c',
-      borderDownColor: '#f07178',
-      wickUpColor: '#3dd68c',
-      wickDownColor: '#f07178',
+      upColor: UP,
+      downColor: DOWN,
+      borderUpColor: UP,
+      borderDownColor: DOWN,
+      wickUpColor: UP,
+      wickDownColor: DOWN,
     });
 
     const volume = chart.addSeries(HistogramSeries, {
@@ -62,14 +90,16 @@ export function ChartWidget() {
       priceScaleId: 'vol',
     });
     chart.priceScale('vol').applyOptions({
-      scaleMargins: { top: 0.8, bottom: 0 },
+      scaleMargins: { top: 0.82, bottom: 0 },
+      borderVisible: false,
     });
 
     const vwap = chart.addSeries(LineSeries, {
-      color: '#f59e0b',
-      lineWidth: 2,
+      color: '#f0b90b',
+      lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
+      crosshairMarkerVisible: false,
     });
 
     const cvd = chart.addSeries(LineSeries, {
@@ -78,9 +108,11 @@ export function ChartWidget() {
       priceScaleId: 'cvd',
       priceLineVisible: false,
       lastValueVisible: false,
+      crosshairMarkerVisible: false,
     });
     chart.priceScale('cvd').applyOptions({
       scaleMargins: { top: 0.05, bottom: 0.55 },
+      borderVisible: false,
     });
 
     markersRef.current = createSeriesMarkers(candles, []);
@@ -124,7 +156,7 @@ export function ChartWidget() {
       feed.candles.map((c) => ({
         time: c.time as Time,
         value: c.volume,
-        color: c.close >= c.open ? 'rgba(61,214,140,0.4)' : 'rgba(240,113,120,0.4)',
+        color: c.close >= c.open ? 'rgba(14,203,129,0.45)' : 'rgba(246,70,93,0.45)',
       })),
     );
 
@@ -156,11 +188,10 @@ export function ChartWidget() {
         const markers: SeriesMarker<Time>[] = feed.liquidations.slice(0, 25).map((l) => ({
           time: (Math.floor(l.time / 1000) as unknown as Time),
           position: l.side === 'long' ? 'belowBar' : 'aboveBar',
-          color: l.side === 'long' ? '#ef4444' : '#22c55e',
+          color: l.side === 'long' ? DOWN : UP,
           shape: l.side === 'long' ? 'arrowUp' : 'arrowDown',
           text: `Liq ${l.size.toFixed(1)}`,
         }));
-        // lightweight-charts requires sorted unique times; keep latest per bucket
         const byTime = new Map<number, SeriesMarker<Time>>();
         for (const m of markers) byTime.set(Number(m.time), m);
         markersRef.current.setMarkers(
@@ -174,7 +205,7 @@ export function ChartWidget() {
 
   return (
     <div className="relative flex h-full flex-col">
-      <div className="absolute left-2 top-2 z-10 flex gap-1">
+      <div className="absolute left-1.5 top-1.5 z-10 flex overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
         <Toggle label="VWAP" on={showVwap} onClick={() => setShowVwap(!showVwap)} />
         <Toggle label="CVD" on={showCvdOverlay} onClick={() => setShowCvdOverlay(!showCvdOverlay)} />
         <Toggle label="Liqs" on={showLiqMarkers} onClick={() => setShowLiqMarkers(!showLiqMarkers)} />
@@ -189,10 +220,10 @@ function Toggle({ label, on, onClick }: { label: string; on: boolean; onClick: (
     <button
       type="button"
       onClick={onClick}
-      className={`rounded border px-1.5 py-0.5 text-[10px] ${
+      className={`px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
         on
-          ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-          : 'border-terminal-border bg-black/40 text-zinc-500'
+          ? 'bg-up/15 text-up'
+          : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
       }`}
     >
       {label}

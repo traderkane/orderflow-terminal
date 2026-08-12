@@ -1,15 +1,16 @@
 import { useTerminalStore } from "../store/useTerminalStore";
 import type { ExchangeId, FeedStatus, SymbolId } from "../types/market";
 import type { FeedMode } from "../data/feedTypes";
+import { fmtPct, fmtPrice } from "../lib/format";
 
 const SYMBOLS: SymbolId[] = ["BTC/USD", "ETH/USD"];
 const EXCHANGES: ExchangeId[] = ["Binance", "Bybit", "OKX"];
 
 function venueDot(status: FeedStatus | undefined, selected: boolean) {
   if (!selected) return "bg-zinc-700";
-  if (status === "live") return "bg-emerald-400";
+  if (status === "live") return "bg-up";
   if (status === "connecting") return "animate-pulse bg-sky-400";
-  if (status === "error") return "bg-rose-500";
+  if (status === "error") return "bg-down";
   return "bg-amber-400";
 }
 
@@ -34,35 +35,32 @@ export function TopBar() {
 
   const statusDot =
     status === "live"
-      ? "animate-pulse bg-emerald-400"
+      ? "animate-pulse bg-up"
       : status === "connecting"
         ? "animate-pulse bg-sky-400"
         : status === "error"
-          ? "bg-rose-500"
+          ? "bg-down"
           : "bg-amber-400";
 
-  const connected = EXCHANGES.filter(
-    (ex) => exchanges.includes(ex) && venueStatus[ex] === "live",
-  );
 
   return (
-    <header className="flex h-11 shrink-0 items-center gap-2.5 border-b border-terminal-border bg-[#080b11] px-2.5">
-      <div className="flex items-center gap-2 pr-2">
-        <div className="flex h-6 w-6 items-center justify-center rounded-sm bg-emerald-500/15 text-xs font-bold text-emerald-400">
+    <header className="flex h-9 shrink-0 items-center gap-2 border-b border-terminal-border bg-[#07090d] px-2">
+      <div className="flex items-center gap-1.5 pr-1.5">
+        <div className="flex h-5 w-5 items-center justify-center rounded-[2px] bg-up/15 text-[11px] font-bold text-up">
           Φ
         </div>
-        <div className="leading-tight">
-          <div className="text-sm font-semibold tracking-wide text-zinc-100">Flow Terminal</div>
-          <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Orderflow</div>
+        <div className="leading-none">
+          <div className="text-[12px] font-semibold tracking-wide text-zinc-100">Flow</div>
+          <div className="text-[9px] uppercase tracking-[0.18em] text-terminal-label">Terminal</div>
         </div>
       </div>
 
-      <div className="h-6 w-px bg-terminal-border" />
+      <div className="h-4 w-px bg-terminal-border" />
 
       <select
         value={symbol}
         onChange={(e) => setSymbol(e.target.value as SymbolId)}
-        className="rounded border border-terminal-border bg-terminal-panel px-2 py-1 font-mono text-xs text-zinc-100 outline-none focus:border-emerald-500/50"
+        className="h-6 rounded-[2px] border border-terminal-border bg-terminal-elevated px-1.5 font-mono text-[11px] text-zinc-100 outline-none focus:border-up/40"
       >
         {SYMBOLS.map((s) => (
           <option key={s} value={s}>
@@ -71,7 +69,7 @@ export function TopBar() {
         ))}
       </select>
 
-      <div className="flex overflow-hidden rounded border border-terminal-border">
+      <div className="flex h-6 overflow-hidden rounded-[2px] border border-terminal-border">
         {(
           [
             ["live", "Live"],
@@ -82,12 +80,12 @@ export function TopBar() {
             key={mode}
             type="button"
             onClick={() => setFeedMode(mode as FeedMode)}
-            className={`px-2 py-1 text-[11px] ${
+            className={`px-2 text-[10px] font-medium uppercase tracking-wider ${
               feedMode === mode
                 ? mode === "live"
-                  ? "bg-emerald-500/15 text-emerald-300"
+                  ? "bg-up/15 text-up"
                   : "bg-zinc-800 text-zinc-100"
-                : "text-zinc-500 hover:text-zinc-300"
+                : "text-terminal-muted hover:text-zinc-300"
             }`}
             title={
               mode === "live"
@@ -100,7 +98,7 @@ export function TopBar() {
         ))}
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-0.5">
         {EXCHANGES.map((ex) => {
           const on = exchanges.includes(ex);
           const vStatus = venueStatus[ex];
@@ -118,62 +116,53 @@ export function TopBar() {
                     ? `${ex} mock tag on`
                     : `${ex} mock tag off`
               }
-              className={`flex items-center gap-1.5 rounded border px-2 py-1 text-[11px] ${
+              className={`flex h-6 items-center gap-1 rounded-[2px] border px-1.5 text-[10px] ${
                 on
-                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                  : "border-terminal-border bg-transparent text-zinc-500"
+                  ? "border-up/30 bg-up/[0.08] text-up"
+                  : "border-transparent text-terminal-muted hover:border-terminal-border hover:text-zinc-400"
               }`}
             >
               {live && <span className={`h-1.5 w-1.5 rounded-full ${venueDot(vStatus, on)}`} />}
-              {ex}
+              {ex.slice(0, 3)}
             </button>
           );
         })}
       </div>
 
-      {live && (
-        <span className="hidden rounded border border-terminal-border px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-500 lg:inline">
-          {connected.length
-            ? `WS ${connected.map((e) => e.slice(0, 3)).join("+")}`
-            : "WS …"}
-        </span>
-      )}
-
-      <div className="ml-auto flex items-center gap-3">
+      <div className="ml-auto flex items-center gap-2">
         {stats && (
           <div className="hidden items-baseline gap-2 md:flex">
-            <span className="font-mono text-sm text-zinc-100">
-              {stats.last.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            <span className="font-mono text-[13px] font-medium tabular-nums text-zinc-100">
+              {fmtPrice(stats.last, 2)}
             </span>
-            <span className={`font-mono text-xs ${up ? "text-up" : "text-down"}`}>
-              {up ? "+" : ""}
-              {stats.changePct24h.toFixed(2)}%
+            <span className={`font-mono text-[11px] tabular-nums ${up ? "text-up" : "text-down"}`}>
+              {fmtPct(stats.changePct24h)}
             </span>
           </div>
         )}
 
-        <div className="flex items-center gap-1.5 rounded border border-terminal-border px-2 py-1">
-          <span className={`h-2 w-2 rounded-full ${statusDot}`} />
-          <span className="text-[11px] uppercase tracking-wider text-zinc-400">{status}</span>
+        <div className="flex h-6 items-center gap-1.5 rounded-[2px] border border-terminal-border px-1.5">
+          <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
+          <span className="text-[10px] uppercase tracking-wider text-terminal-muted">{status}</span>
         </div>
 
         <button
           type="button"
           onClick={toggleFeed}
-          className="rounded border border-terminal-border px-2 py-1 text-[11px] text-zinc-300 hover:bg-zinc-800"
+          className="h-6 rounded-[2px] border border-terminal-border px-2 text-[10px] uppercase tracking-wider text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200"
         >
           {status === "live" || status === "connecting" ? "Pause" : "Start"}
         </button>
 
         {!live && (
-          <div className="flex overflow-hidden rounded border border-terminal-border">
+          <div className="flex h-6 overflow-hidden rounded-[2px] border border-terminal-border">
             {([1, 2] as const).map((s) => (
               <button
                 key={s}
                 type="button"
                 onClick={() => setSpeed(s)}
-                className={`px-2 py-1 text-[11px] ${
-                  speed === s ? "bg-zinc-800 text-zinc-100" : "text-zinc-500"
+                className={`px-1.5 font-mono text-[10px] ${
+                  speed === s ? "bg-zinc-800 text-zinc-100" : "text-terminal-muted"
                 }`}
               >
                 {s}x
@@ -185,7 +174,7 @@ export function TopBar() {
         <button
           type="button"
           onClick={() => setLauncherOpen(true)}
-          className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-300 hover:bg-emerald-500/20"
+          className="h-6 rounded-[2px] border border-up/25 bg-up/[0.08] px-2 text-[10px] font-medium uppercase tracking-wider text-up hover:bg-up/15"
         >
           + Widget
         </button>
@@ -193,9 +182,9 @@ export function TopBar() {
         <button
           type="button"
           onClick={resetLayout}
-          className="rounded border border-terminal-border px-2 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+          className="h-6 rounded-[2px] border border-terminal-border px-2 text-[10px] uppercase tracking-wider text-terminal-muted hover:bg-white/[0.03] hover:text-zinc-300"
         >
-          Reset layout
+          Reset
         </button>
       </div>
     </header>

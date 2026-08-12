@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
+import { fmtPrice } from '../lib/format';
 
 export function VolumeProfileWidget() {
   const profile = useTerminalStore((s) => s.feed?.volumeProfile) ?? [];
@@ -18,47 +19,49 @@ export function VolumeProfileWidget() {
   }, [profile, mid]);
 
   if (!profile.length) {
-    return <div className="p-3 text-xs text-zinc-500">Accumulating profile…</div>;
+    return <div className="p-2 font-mono text-[11px] text-terminal-muted">Accumulating profile…</div>;
   }
 
-  const view = profile.slice(-36);
+  const view = profile.slice(-40);
 
   return (
-    <div className="flex h-full flex-col p-2">
-      <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-zinc-500">
+    <div className="flex h-full flex-col px-1.5 py-1">
+      <div className="mb-1 flex items-center justify-between text-[9px] uppercase tracking-[0.12em] text-terminal-label">
         <span>VPVR</span>
-        <span className="font-mono text-zinc-300">POC {poc.toFixed(2)}</span>
+        <span className="font-mono tabular-nums normal-case tracking-normal text-accent">
+          POC {fmtPrice(poc, 2)}
+        </span>
       </div>
-      <div className="min-h-0 flex-1 space-y-[2px] overflow-hidden">
+      <div className="min-h-0 flex-1 space-y-px overflow-hidden">
         {view.map((bin) => {
           const width = (bin.total / max) * 100;
           const buyShare = bin.total ? (bin.buyVolume / bin.total) * 100 : 50;
           const isPoc = bin.price === poc;
           return (
-            <div key={bin.price} className="flex items-center gap-2">
+            <div key={bin.price} className="flex items-center gap-1.5">
               <span
-                className={`w-16 shrink-0 text-right font-mono text-[10px] ${
-                  isPoc ? 'text-amber-300' : 'text-zinc-500'
+                className={`w-14 shrink-0 text-right font-mono text-[10px] tabular-nums ${
+                  isPoc ? 'text-accent' : 'text-zinc-600'
                 }`}
               >
-                {bin.price.toFixed(2)}
+                {fmtPrice(bin.price, 2)}
               </span>
-              <div className="relative h-3 flex-1 rounded-sm bg-zinc-900">
+              <div className="relative h-2.5 flex-1 overflow-hidden rounded-[1px] bg-[#080a0e]">
                 <div className="absolute inset-y-0 left-0 flex" style={{ width: `${width}%` }}>
-                  <div className="h-full bg-up/70" style={{ width: `${buyShare}%` }} />
-                  <div className="h-full bg-down/70" style={{ width: `${100 - buyShare}%` }} />
+                  <div className="h-full bg-up/65" style={{ width: `${buyShare}%` }} />
+                  <div className="h-full bg-down/65" style={{ width: `${100 - buyShare}%` }} />
                 </div>
               </div>
             </div>
           );
         })}
       </div>
-      <div className="mt-2 flex gap-3 text-[10px] text-zinc-500">
+      <div className="mt-1 flex gap-3 text-[9px] text-terminal-label">
         <span className="flex items-center gap-1">
-          <i className="inline-block h-2 w-2 rounded-sm bg-up/70" /> buy
+          <i className="inline-block h-1.5 w-1.5 rounded-[1px] bg-up/70" /> buy
         </span>
         <span className="flex items-center gap-1">
-          <i className="inline-block h-2 w-2 rounded-sm bg-down/70" /> sell
+          <i className="inline-block h-1.5 w-1.5 rounded-[1px] bg-down/70" /> sell
         </span>
       </div>
     </div>

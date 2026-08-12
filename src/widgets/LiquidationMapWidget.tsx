@@ -32,12 +32,12 @@ export function LiquidationMapWidget() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#0a0e15';
+    ctx.fillStyle = '#0a0c10';
     ctx.fillRect(0, 0, w, h);
 
     if (!map || !map.levels.length || map.maxDensity <= 0) {
-      ctx.fillStyle = '#52525b';
-      ctx.font = '11px JetBrains Mono, monospace';
+      ctx.fillStyle = '#565d6a';
+      ctx.font = '11px IBM Plex Mono, monospace';
       ctx.fillText('Waiting for mark / OI…', 12, 24);
       return;
     }
@@ -72,12 +72,12 @@ export function LiquidationMapWidget() {
 
       if (longI > 0.02) {
         const bw = Math.max(1, longI * maxBar);
-        ctx.fillStyle = `rgba(61, 214, 140, ${0.2 + longI * 0.75})`;
+        ctx.fillStyle = `rgba(14, 203, 129, ${0.2 + longI * 0.75})`;
         ctx.fillRect(midX - bw, y, bw, barH);
       }
       if (shortI > 0.02) {
         const bw = Math.max(1, shortI * maxBar);
-        ctx.fillStyle = `rgba(240, 113, 120, ${0.2 + shortI * 0.75})`;
+        ctx.fillStyle = `rgba(246, 70, 93, ${0.2 + shortI * 0.75})`;
         ctx.fillRect(midX, y, bw, barH);
       }
     }
@@ -94,13 +94,13 @@ export function LiquidationMapWidget() {
     ctx.setLineDash([]);
 
     ctx.fillStyle = '#e4e4e7';
-    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.font = '10px IBM Plex Mono, monospace';
     ctx.textAlign = 'left';
     ctx.fillText(map.mark.toFixed(2), padL + 4, Math.max(padT + 10, markY - 3));
 
     // Price labels (lo / mid / hi)
     ctx.fillStyle = '#71717a';
-    ctx.font = '9px JetBrains Mono, monospace';
+    ctx.font = '9px IBM Plex Mono, monospace';
     ctx.textAlign = 'right';
     const labels = [
       { p: priceHi, y: padT + 9 },
@@ -113,8 +113,8 @@ export function LiquidationMapWidget() {
 
     // Axis captions
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#52525b';
-    ctx.font = '9px JetBrains Mono, monospace';
+    ctx.fillStyle = '#565d6a';
+    ctx.font = '9px IBM Plex Mono, monospace';
     ctx.fillText('LONG liq ↓', padL + plotW * 0.25, h - 4);
     ctx.fillText('SHORT liq ↑', padL + plotW * 0.75, h - 4);
   }, [map]);
@@ -122,7 +122,7 @@ export function LiquidationMapWidget() {
   return (
     <div className="relative h-full w-full">
       <canvas ref={canvasRef} className="h-full w-full" />
-      <div className="pointer-events-none absolute right-2 top-2 rounded bg-black/50 px-2 py-1 text-[9px] uppercase tracking-wider text-zinc-500">
+      <div className="pointer-events-none absolute right-1.5 top-1.5 rounded-[2px] bg-black/55 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-zinc-500">
         modelled · 5–100× ladder
       </div>
     </div>

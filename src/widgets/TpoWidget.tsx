@@ -54,7 +54,7 @@ export function TpoWidget() {
 
   if (!profile.levels.length) {
     return (
-      <div className="p-3 font-mono text-xs text-zinc-500">Building TPO…</div>
+      <div className="p-2 font-mono text-[11px] text-terminal-muted">Building TPO…</div>
     );
   }
 
@@ -63,8 +63,8 @@ export function TpoWidget() {
   );
 
   return (
-    <div className="flex h-full flex-col overflow-hidden font-mono text-[10px] leading-tight">
-      <div className="mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-2 pt-1 text-[9px] uppercase tracking-wider text-zinc-500">
+    <div className="flex h-full flex-col overflow-hidden font-mono text-[10px] leading-[1.1]">
+      <div className="mb-0.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 border-b border-terminal-border/60 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em] text-terminal-label">
         <span>
           TPO · {formatPeriodLabel(profile.periodSec)} brackets · tick{' '}
           {profile.tick}
@@ -141,7 +141,7 @@ export function TpoWidget() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-terminal-border px-2 py-1 text-[9px] text-zinc-500">
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-terminal-border/80 px-1.5 py-0.5 text-[9px] text-terminal-label">
         <span>
           <span className="text-amber-300">POC</span> max time
         </span>

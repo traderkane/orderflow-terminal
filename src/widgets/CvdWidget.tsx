@@ -20,22 +20,28 @@ export function CvdWidget() {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#0a0e15' },
-        textColor: '#8b93a7',
-        fontSize: 11,
-        fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+        background: { type: ColorType.Solid, color: '#0a0c10' },
+        textColor: '#6b7280',
+        fontSize: 10,
+        fontFamily: 'IBM Plex Mono, JetBrains Mono, ui-monospace, monospace',
+        attributionLogo: false,
       },
       grid: {
-        vertLines: { color: '#1a2030' },
-        horzLines: { color: '#1a2030' },
+        vertLines: { color: '#12161e' },
+        horzLines: { color: '#12161e' },
       },
-      rightPriceScale: { borderColor: '#1f2937' },
-      timeScale: { borderColor: '#1f2937', timeVisible: true },
+      rightPriceScale: { borderColor: '#161a22' },
+      timeScale: { borderColor: '#161a22', timeVisible: true },
+      crosshair: {
+        mode: 0,
+        vertLine: { color: 'rgba(212,212,216,0.28)', style: 2, labelBackgroundColor: '#1a2030' },
+        horzLine: { color: 'rgba(212,212,216,0.28)', style: 2, labelBackgroundColor: '#1a2030' },
+      },
     });
 
     const line = chart.addSeries(LineSeries, {
       color: '#38bdf8',
-      lineWidth: 2,
+      lineWidth: 1,
       priceLineVisible: false,
     });
     const hist = chart.addSeries(HistogramSeries, {
@@ -43,7 +49,8 @@ export function CvdWidget() {
       priceFormat: { type: 'volume' },
     });
     chart.priceScale('delta').applyOptions({
-      scaleMargins: { top: 0.7, bottom: 0 },
+      scaleMargins: { top: 0.72, bottom: 0 },
+      borderVisible: false,
     });
 
     chartRef.current = chart;
@@ -71,7 +78,7 @@ export function CvdWidget() {
       cvd.map((p) => ({
         time: p.time as Time,
         value: p.delta,
-        color: p.delta >= 0 ? 'rgba(61,214,140,0.7)' : 'rgba(240,113,120,0.7)',
+        color: p.delta >= 0 ? 'rgba(14,203,129,0.7)' : 'rgba(246,70,93,0.7)',
       })),
     );
   }, [cvd]);

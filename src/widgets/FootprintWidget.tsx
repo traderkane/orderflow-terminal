@@ -1,13 +1,14 @@
 import { useMemo } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
 import type { FootprintBar } from '../types/market';
+import { fmtPrice } from '../lib/format';
 
 const IMBALANCE_RATIO = 3;
-const MAX_BARS = 10;
-const MAX_ROWS = 36;
+const MAX_BARS = 12;
+const MAX_ROWS = 42;
 
 function fmtVol(v: number): string {
-  if (v <= 0) return '·';
+  if (!(v > 0)) return '·';
   if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
   if (v >= 100) return v.toFixed(0);
   if (v >= 10) return v.toFixed(1);
@@ -16,7 +17,7 @@ function fmtVol(v: number): string {
 
 function fmtTime(sec: number): string {
   const d = new Date(sec * 1000);
-  return d.toLocaleTimeString(undefined, {
+  return d.toLocaleTimeString('en-GB', {
     hour12: false,
     hour: '2-digit',
     minute: '2-digit',
@@ -28,20 +29,20 @@ function cellTone(
   sell: number,
   maxSide: number,
 ): { buyBg: string; sellBg: string; imbalance: 'buy' | 'sell' | null } {
-  const buyA = maxSide > 0 ? 0.12 + (buy / maxSide) * 0.55 : 0.08;
-  const sellA = maxSide > 0 ? 0.12 + (sell / maxSide) * 0.55 : 0.08;
+  const buyA = maxSide > 0 ? 0.1 + (buy / maxSide) * 0.62 : 0.06;
+  const sellA = maxSide > 0 ? 0.1 + (sell / maxSide) * 0.62 : 0.06;
   let imbalance: 'buy' | 'sell' | null = null;
   if (buy > 0 && sell > 0) {
     if (buy / sell >= IMBALANCE_RATIO) imbalance = 'buy';
     else if (sell / buy >= IMBALANCE_RATIO) imbalance = 'sell';
-  } else if (buy > 0 && sell === 0 && buy > maxSide * 0.15) {
+  } else if (buy > 0 && sell === 0 && buy > maxSide * 0.12) {
     imbalance = 'buy';
-  } else if (sell > 0 && buy === 0 && sell > maxSide * 0.15) {
+  } else if (sell > 0 && buy === 0 && sell > maxSide * 0.12) {
     imbalance = 'sell';
   }
   return {
-    buyBg: `rgba(61, 214, 140, ${buyA})`,
-    sellBg: `rgba(240, 113, 120, ${sellA})`,
+    buyBg: `rgba(14, 203, 129, ${buyA})`,
+    sellBg: `rgba(246, 70, 93, ${sellA})`,
     imbalance,
   };
 }
@@ -78,7 +79,7 @@ export function FootprintWidget() {
 
   if (!bars.length || !prices.length) {
     return (
-      <div className="p-3 font-mono text-xs text-zinc-500">Building footprint…</div>
+      <div className="p-2 font-mono text-[11px] text-terminal-muted">Building footprint…</div>
     );
   }
 
@@ -86,29 +87,29 @@ export function FootprintWidget() {
     bar.levels.find((l) => l.price === price);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden font-mono text-[10px] leading-tight">
-      <div className="mb-1 flex items-center justify-between px-2 pt-1 text-[9px] uppercase tracking-wider text-zinc-500">
-        <span>Clustered · ask buy / bid sell</span>
-        <span className="normal-case tracking-normal text-zinc-400">
+    <div className="flex h-full flex-col overflow-hidden font-mono text-[10px] leading-[1.1]">
+      <div className="flex items-center justify-between border-b border-terminal-border/60 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em] text-terminal-label">
+        <span>Cluster · sell | buy</span>
+        <span className="normal-case tracking-normal text-zinc-500">
           imb ≥ {IMBALANCE_RATIO}:1
         </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto px-1 pb-1">
+      <div className="min-h-0 flex-1 overflow-auto px-0.5 pb-0.5">
         <table className="w-full border-collapse">
-          <thead className="sticky top-0 z-10 bg-terminal-panel/95">
+          <thead className="sticky top-0 z-10 bg-terminal-panel/95 backdrop-blur-[1px]">
             <tr>
-              <th className="px-1 py-1 text-right font-medium text-zinc-500">Px</th>
+              <th className="px-1 py-0.5 text-right font-medium text-terminal-label">Px</th>
               {bars.map((bar, i) => (
                 <th
                   key={bar.time}
-                  className="px-0.5 py-1 text-center font-medium text-zinc-500"
+                  className="px-0.5 py-0.5 text-center font-medium text-terminal-label"
                   title={new Date(bar.time * 1000).toLocaleString()}
                 >
-                  <div>{fmtTime(bar.time)}</div>
+                  <div className="tabular-nums">{fmtTime(bar.time)}</div>
                   <div
-                    className={
+                    className={`tabular-nums ${
                       barDeltas[i] >= 0 ? 'text-up/80' : 'text-down/80'
-                    }
+                    }`}
                   >
                     {barDeltas[i] >= 0 ? '+' : ''}
                     {fmtVol(Math.abs(barDeltas[i]))}
@@ -121,13 +122,13 @@ export function FootprintWidget() {
             {prices.map((price) => {
               const near = last > 0 && Math.abs(price - last) / last < 0.00005;
               return (
-                <tr key={price} className={near ? 'bg-white/[0.03]' : undefined}>
+                <tr key={price} className={near ? 'bg-white/[0.035]' : undefined}>
                   <td
-                    className={`whitespace-nowrap px-1 py-[1px] text-right tabular-nums ${
-                      near ? 'text-zinc-100' : 'text-zinc-500'
+                    className={`whitespace-nowrap px-1 py-px text-right tabular-nums ${
+                      near ? 'text-zinc-100' : 'text-zinc-600'
                     }`}
                   >
-                    {price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    {fmtPrice(price, 2)}
                   </td>
                   {bars.map((bar) => {
                     const cell = lookup(bar, price);
@@ -135,7 +136,7 @@ export function FootprintWidget() {
                       return (
                         <td
                           key={bar.time}
-                          className="px-0.5 py-[1px] text-center text-zinc-700"
+                          className="px-0.5 py-px text-center text-zinc-800"
                         >
                           ·
                         </td>
@@ -144,14 +145,14 @@ export function FootprintWidget() {
                     const tone = cellTone(cell.buyVolume, cell.sellVolume, maxSide);
                     const ring =
                       tone.imbalance === 'buy'
-                        ? 'inset 0 0 0 1px rgba(61,214,140,0.85)'
+                        ? 'inset 0 0 0 1px rgba(14,203,129,0.9)'
                         : tone.imbalance === 'sell'
-                          ? 'inset 0 0 0 1px rgba(240,113,120,0.85)'
+                          ? 'inset 0 0 0 1px rgba(246,70,93,0.9)'
                           : undefined;
                     return (
-                      <td key={bar.time} className="px-0.5 py-[1px]">
+                      <td key={bar.time} className="px-0.5 py-px">
                         <div
-                          className="grid grid-cols-2 gap-px overflow-hidden rounded-[2px]"
+                          className="grid grid-cols-2 gap-px overflow-hidden rounded-[1px]"
                           style={ring ? { boxShadow: ring } : undefined}
                         >
                           <span
@@ -176,12 +177,11 @@ export function FootprintWidget() {
           </tbody>
         </table>
       </div>
-      <div className="flex gap-3 border-t border-terminal-border px-2 py-1 text-[9px] text-zinc-500">
+      <div className="flex gap-3 border-t border-terminal-border/80 px-1.5 py-0.5 text-[9px] text-terminal-label">
         <span>
           <span className="text-down">sell</span> | <span className="text-up">buy</span>
         </span>
-        <span>Δ bar header</span>
-        <span className="text-zinc-400">outline = imbalance</span>
+        <span className="text-zinc-500">outline = imbalance</span>
       </div>
     </div>
   );

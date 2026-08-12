@@ -23,22 +23,21 @@ export function HeatmapWidget() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#0a0e15';
+    ctx.fillStyle = '#0a0c10';
     ctx.fillRect(0, 0, w, h);
 
     if (!heatmap.length) {
-      ctx.fillStyle = '#52525b';
-      ctx.font = '11px JetBrains Mono, monospace';
-      ctx.fillText('Building liquidity heatmap…', 12, 24);
+      ctx.fillStyle = '#565d6a';
+      ctx.font = '11px IBM Plex Mono, monospace';
+      ctx.fillText('Building liquidity heatmap…', 10, 20);
       return;
     }
 
-    const frames = heatmap.slice(-140);
+    const frames = heatmap.slice(-160);
     const levels = frames[frames.length - 1]?.prices.length || frames[0].prices.length;
     const cellW = w / Math.max(frames.length, 1);
     const cellH = h / Math.max(levels, 1);
 
-    // Window-relative peak so faint levels stay visible beside large walls.
     let peak = 0;
     for (const frame of frames) {
       for (let y = 0; y < levels; y++) {
@@ -53,14 +52,13 @@ export function HeatmapWidget() {
         const bid = frame.bids[y] ?? 0;
         const ask = frame.asks[y] ?? 0;
         const raw = Math.max(bid, ask) * invPeak;
-        if (raw < 0.015) continue;
-        // Gamma lift — mid-tier liquidity reads clearly (MMT-like).
-        const intensity = Math.min(1, Math.pow(raw, 0.55));
+        if (raw < 0.012) continue;
+        const intensity = Math.min(1, Math.pow(raw, 0.52));
         const isBid = bid >= ask;
-        const alpha = 0.18 + intensity * 0.82;
+        const alpha = 0.16 + intensity * 0.84;
         ctx.fillStyle = isBid
-          ? `rgba(61, 214, 140, ${alpha})`
-          : `rgba(240, 113, 120, ${alpha})`;
+          ? `rgba(14, 203, 129, ${alpha})`
+          : `rgba(246, 70, 93, ${alpha})`;
         const py = h - (y + 1) * cellH;
         ctx.fillRect(
           Math.floor(x * cellW),
@@ -71,22 +69,21 @@ export function HeatmapWidget() {
       }
     }
 
-    // mid line from latest frame prices
     if (mid && frames.length) {
       const prices = frames[frames.length - 1].prices;
       const lo = prices[0];
       const hi = prices[prices.length - 1];
       const t = (mid - lo) / (hi - lo || 1);
       const y = h - t * h;
-      ctx.strokeStyle = 'rgba(250, 250, 250, 0.35)';
-      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = 'rgba(244, 244, 245, 0.4)';
+      ctx.setLineDash([3, 3]);
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(w, y);
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = '#a1a1aa';
-      ctx.font = '10px JetBrains Mono, monospace';
+      ctx.font = '10px IBM Plex Mono, monospace';
       ctx.fillText(mid.toFixed(2), 6, Math.max(12, y - 4));
     }
   }, [heatmap, mid]);
@@ -94,8 +91,8 @@ export function HeatmapWidget() {
   return (
     <div className="relative h-full w-full">
       <canvas ref={canvasRef} className="h-full w-full" />
-      <div className="pointer-events-none absolute bottom-2 right-2 rounded bg-black/50 px-2 py-1 text-[10px] text-zinc-400">
-        time → · price ↑ · green bid / red ask
+      <div className="pointer-events-none absolute bottom-1.5 right-1.5 rounded-[2px] bg-black/55 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-zinc-500">
+        t → · px ↑ · bid / ask
       </div>
     </div>
   );

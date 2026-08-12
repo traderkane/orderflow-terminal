@@ -19,7 +19,7 @@ export default function App() {
   }, [setLauncherOpen]);
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-terminal-bg text-zinc-100">
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-terminal-bg text-zinc-200">
       <TopBar />
       <TerminalGrid />
       <WidgetLauncher />

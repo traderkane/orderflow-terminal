@@ -1,15 +1,20 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-terminal-bg: #05070b;
-  --color-terminal-panel: #0c1017;
-  --color-terminal-border: #1a2230;
-  --color-up: #3dd68c;
-  --color-down: #f07178;
+  --color-terminal-bg: #050608;
+  --color-terminal-panel: #0a0c10;
+  --color-terminal-elevated: #0e1116;
+  --color-terminal-border: #161a22;
+  --color-terminal-border-strong: #222833;
+  --color-terminal-muted: #6b7280;
+  --color-terminal-label: #565d6a;
+  --color-up: #0ecb81;
+  --color-down: #f6465d;
+  --color-accent: #f0b90b;
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  --shadow-panel: 0 0 0 1px rgba(255, 255, 255, 0.025), 0 6px 18px rgba(0, 0, 0, 0.4);
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --shadow-panel: 0 0 0 1px rgba(255, 255, 255, 0.02), 0 4px 16px rgba(0, 0, 0, 0.45);
 }
 
 html,
@@ -17,44 +22,97 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background: #05070b;
-  color: #e4e4e7;
+  background: #050608;
+  color: #d4d4d8;
   font-family: var(--font-sans);
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 * {
   box-sizing: border-box;
 }
 
+button,
+select {
+  font-family: inherit;
+}
+
+.tabular-nums,
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #243044;
+  background: #252b36;
   border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #343b48;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 
+/* Grid chrome — quiet, pro */
 .react-grid-item.react-grid-placeholder {
-  background: rgba(61, 214, 140, 0.12) !important;
-  border: 1px dashed rgba(61, 214, 140, 0.45);
+  background: rgba(14, 203, 129, 0.08) !important;
+  border: 1px dashed rgba(14, 203, 129, 0.35);
   border-radius: 2px;
   opacity: 1 !important;
 }
 
+.react-resizable-handle {
+  z-index: 2;
+}
 .react-resizable-handle::after {
-  border-color: #475569 !important;
-  width: 6px !important;
-  height: 6px !important;
+  border-color: #3a4250 !important;
+  width: 5px !important;
+  height: 5px !important;
+  right: 3px !important;
+  bottom: 3px !important;
+}
+.react-grid-item > .react-resizable-handle {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.react-grid-item:hover > .react-resizable-handle,
+.react-grid-item.resizing > .react-resizable-handle {
+  opacity: 0.7;
 }
 
-.react-grid-item > .react-resizable-handle {
+.widget-shell {
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.widget-shell:hover {
+  border-color: #1e2430;
+}
+.widget-shell:focus-within {
+  border-color: #2a3342;
+  box-shadow: 0 0 0 1px rgba(14, 203, 129, 0.08);
+}
+
+.drag-grip {
+  display: inline-grid;
+  grid-template-columns: repeat(2, 2px);
+  gap: 2px;
   opacity: 0.35;
 }
-.react-grid-item:hover > .react-resizable-handle {
-  opacity: 0.85;
+.drag-grip span {
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: #8b93a7;
+}
+.drag-handle:hover .drag-grip {
+  opacity: 0.7;
+}
+
+.depth-row {
+  transition: background-color 80ms linear;
 }
