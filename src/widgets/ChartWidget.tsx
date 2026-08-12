@@ -83,6 +83,14 @@ import {
   splatBlend,
   type HeatmapCraftPrefs,
 } from '../lib/heatmapCraft';
+import {
+  FOOTPRINT_GRADE_EVENT,
+  FOOTPRINT_GRADE_MODES,
+  footprintCellAlphas,
+  loadFootprintGrade,
+  persistFootprintGrade,
+  type FootprintGradeMode,
+} from '../lib/footprintGrade';
 import { useTerminalStore } from '../store/useTerminalStore';
 import type {
   Candle,
@@ -192,6 +200,28 @@ export function ChartWidget() {
   );
   const heatmapCraftRef = useRef<HeatmapCraftPrefs>(heatmapCraft);
   heatmapCraftRef.current = heatmapCraft;
+
+  const [footprintGrade, setFootprintGrade] = useState<FootprintGradeMode>(() =>
+    loadFootprintGrade(),
+  );
+  const footprintGradeRef = useRef<FootprintGradeMode>(footprintGrade);
+  footprintGradeRef.current = footprintGrade;
+
+  useEffect(() => {
+    const onGrade = (e: Event) => {
+      const mode = (e as CustomEvent<FootprintGradeMode>).detail;
+      if (mode === 'volume' || mode === 'delta' || mode === 'total') {
+        setFootprintGrade(mode);
+      }
+    };
+    window.addEventListener(FOOTPRINT_GRADE_EVENT, onGrade);
+    return () => window.removeEventListener(FOOTPRINT_GRADE_EVENT, onGrade);
+  }, []);
+
+  const setFootprintGradeMode = (mode: FootprintGradeMode) => {
+    setFootprintGrade(mode);
+    persistFootprintGrade(mode);
+  };
 
   const updateHeatmapCraft = (partial: Partial<HeatmapCraftPrefs>) => {
     const next = patchHeatmapCraft(partial);
@@ -760,12 +790,16 @@ export function ChartWidget() {
 
     let maxSide = 1;
     let maxAbsDelta = 1;
+    let maxTotal = 1;
     for (const b of bars) {
       maxAbsDelta = Math.max(maxAbsDelta, Math.abs(b.delta));
       for (const l of b.levels) {
         maxSide = Math.max(maxSide, l.buyVolume, l.sellVolume);
+        maxAbsDelta = Math.max(maxAbsDelta, Math.abs(l.delta));
+        maxTotal = Math.max(maxTotal, l.buyVolume + l.sellVolume);
       }
     }
+    const gradeMode = footprintGradeRef.current;
 
     // Median bar gap → align footprint body to candle width.
     const xs: number[] = [];
@@ -881,10 +915,14 @@ export function ChartWidget() {
         h = Math.max(minCellH, Math.min(h, maxH));
         const yTop = y - h / 2;
 
-        const buyA =
-          maxSide > 0 ? 0.14 + (lvl.buyVolume / maxSide) * 0.62 : 0.1;
-        const sellA =
-          maxSide > 0 ? 0.14 + (lvl.sellVolume / maxSide) * 0.62 : 0.1;
+        const { buyA, sellA } = footprintCellAlphas(
+          gradeMode,
+          lvl.buyVolume,
+          lvl.sellVolume,
+          maxSide,
+          maxAbsDelta,
+          maxTotal,
+        );
         const midX = x0 + clusterW / 2;
         const halfCluster = clusterW / 2;
 
@@ -1991,7 +2029,7 @@ export function ChartWidget() {
     else if (tool === 'eraser') setHoverCursor('pointer');
     else if (!dragRef.current) setHoverCursor('default');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showHeatmap, showProfile, showBubbles, selectedId, drawings, tool, chartMode, heatmapCraft]);
+  }, [showHeatmap, showProfile, showBubbles, selectedId, drawings, tool, chartMode, heatmapCraft, footprintGrade]);
 
   useEffect(() => {
     const candles = candleRef.current;
@@ -2391,9 +2429,26 @@ export function ChartWidget() {
             ))}
           </div>
           {chartMode === 'footprint' && (
-            <div className="pointer-events-none hidden h-6 items-center rounded-[2px] border border-terminal-border/80 bg-black/45 px-1.5 font-mono text-[9px] uppercase tracking-wider text-zinc-500 backdrop-blur-[2px] sm:flex">
-              sell|buy · imb ≥{FOOTPRINT_IMBALANCE_RATIO}:1 · stack≥{FOOTPRINT_STACK_MIN} · naked POC
-            </div>
+            <>
+              <div className="pointer-events-auto dom-seg h-6 bg-black/55 backdrop-blur-[2px]" role="group" aria-label="Footprint grading">
+                {FOOTPRINT_GRADE_MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className="dom-seg-btn h-full"
+                    data-active={footprintGrade === m.id ? 'true' : 'false'}
+                    title={m.hint}
+                    onClick={() => setFootprintGradeMode(m.id)}
+                  >
+                    <span className="hidden sm:inline">{m.label}</span>
+                    <span className="sm:hidden">{m.short}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="pointer-events-none hidden h-6 items-center rounded-[2px] border border-terminal-border/80 bg-black/45 px-1.5 font-mono text-[9px] uppercase tracking-wider text-zinc-500 backdrop-blur-[2px] md:flex">
+                sell|buy · imb ≥{FOOTPRINT_IMBALANCE_RATIO}:1 · stack≥{FOOTPRINT_STACK_MIN}
+              </div>
+            </>
           )}
         </div>
 
