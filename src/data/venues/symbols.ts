@@ -1,5 +1,8 @@
 import type { ExchangeId, SymbolId } from '../../types/market';
 
+/** UI symbol catalog — extend here for the picker + venue maps. */
+export const UI_SYMBOLS: readonly SymbolId[] = ['BTC/USD', 'ETH/USD'] as const;
+
 /** Unified UI symbol → each venue's USDT perpetual / swap instrument id. */
 export const VENUE_SYMBOLS: Record<ExchangeId, Record<SymbolId, string>> = {
   Binance: {

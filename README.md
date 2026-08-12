@@ -55,7 +55,7 @@ npm run preview
 | **Bybit** | `BTCUSDT` / `ETHUSDT` linear | `publicTrade`, `orderbook.50`, `tickers` |
 | **OKX** | `BTC-USDT-SWAP` / `ETH-USDT-SWAP` | `trades`, `books5`, `funding-rate` |
 
-Symbols: **BTC/USD** / **ETH/USD** → each venue USDT perpetual id (`venues/symbols.ts`).
+Symbols: searchable top-bar picker (**BTC/USD** / **ETH/USD**, extend via `UI_SYMBOLS` in `venues/symbols.ts`) → each venue USDT perpetual id.
 
 Live venue chips subscribe/unsubscribe that exchange. Multi-select merges trades tape (exchange tags), CVD, order book (sizes summed at price), and heatmap from the merged book. Single-venue still works.
 
@@ -117,6 +117,7 @@ Top bar **Alerts** opens a drawer to create / list / delete alerts (persisted in
 
 - Drag widgets from the header handle; resize from corners
 - Layout + widget set persist in `localStorage`
+- **Layout tabs** under the top bar: quick-switch **Scalp / Profile / Default** (+ user-saved templates); optional **+** saves current as a new tab
 - **Layouts** drawer: save current grid as a named template, load / delete user templates
 - Built-in presets: **Scalp** (chart + DOM + tape), **Profile** (chart + TPO + VPVR + footprint)
 - **Reset layout** restores the chart-dominant pro workspace

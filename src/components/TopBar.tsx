@@ -1,9 +1,9 @@
 import { useTerminalStore } from "../store/useTerminalStore";
-import type { ExchangeId, FeedStatus, SymbolId } from "../types/market";
+import type { ExchangeId, FeedStatus } from "../types/market";
 import type { FeedMode } from "../data/feedTypes";
 import { fmtPct, fmtPrice } from "../lib/format";
+import { SymbolPicker } from "./SymbolPicker";
 
-const SYMBOLS: SymbolId[] = ["BTC/USD", "ETH/USD"];
 const EXCHANGES: ExchangeId[] = ["Binance", "Bybit", "OKX"];
 
 function venueDot(status: FeedStatus | undefined, selected: boolean) {
@@ -18,13 +18,11 @@ const ghostBtn =
   "h-6 rounded-[2px] px-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-terminal-muted transition-colors hover:bg-white/[0.04] hover:text-zinc-300";
 
 export function TopBar() {
-  const symbol = useTerminalStore((s) => s.symbol);
   const exchanges = useTerminalStore((s) => s.exchanges);
   const speed = useTerminalStore((s) => s.speed);
   const status = useTerminalStore((s) => s.status);
   const venueStatus = useTerminalStore((s) => s.venueStatus);
   const feedMode = useTerminalStore((s) => s.feedMode);
-  const setSymbol = useTerminalStore((s) => s.setSymbol);
   const setFeedMode = useTerminalStore((s) => s.setFeedMode);
   const toggleExchange = useTerminalStore((s) => s.toggleExchange);
   const setSpeed = useTerminalStore((s) => s.setSpeed);
@@ -66,24 +64,7 @@ export function TopBar() {
 
       {/* Dominant: symbol + last + change */}
       <div className="flex min-w-0 items-baseline gap-2">
-        <select
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value as SymbolId)}
-          className="h-6 max-w-[7.5rem] cursor-pointer appearance-none rounded-[2px] border-0 bg-transparent py-0 pl-0.5 pr-4 font-mono text-[12px] font-semibold tracking-wide text-zinc-100 outline-none hover:bg-white/[0.03] focus:bg-white/[0.04]"
-          style={{
-            backgroundImage:
-              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%236b7280' d='M1.5 2.5L4 5.5L6.5 2.5'/%3E%3C/svg%3E\")",
-            backgroundRepeat: "no-repeat",
-            backgroundPosition: "right 2px center",
-          }}
-          aria-label="Symbol"
-        >
-          {SYMBOLS.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+        <SymbolPicker />
 
         {stats ? (
           <div className="flex items-baseline gap-1.5">

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { TopBar } from './components/TopBar';
+import { LayoutTabs } from './components/LayoutTabs';
 import { TerminalGrid } from './components/TerminalGrid';
 import { WidgetLauncher } from './components/WidgetLauncher';
 import { AlertsDrawer } from './components/AlertsDrawer';
@@ -28,6 +29,7 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-terminal-bg text-zinc-200">
       <TopBar />
+      <LayoutTabs />
       <TerminalGrid />
       <WidgetLauncher />
       <AlertsDrawer />

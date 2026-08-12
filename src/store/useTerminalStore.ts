@@ -62,6 +62,12 @@ const FEED_MODE_KEY = 'flow-terminal-feed-mode';
 const ALERTS_KEY = 'flow-terminal-alerts-v1';
 const ALERT_HISTORY_KEY = 'flow-terminal-alert-history-v1';
 const TEMPLATES_KEY = 'flow-terminal-templates-v1';
+const ACTIVE_LAYOUT_KEY = 'flow-terminal-active-layout-v1';
+
+/** Built-in tab ids shown in the layout strip (Default = reset workspace). */
+export const LAYOUT_TAB_DEFAULT_ID = 'builtin-default';
+export const LAYOUT_TAB_SCALP_ID = 'builtin-scalp';
+export const LAYOUT_TAB_PROFILE_ID = 'builtin-profile';
 
 const MAX_ALERT_HISTORY = 40;
 const MAX_TOASTS = 5;
@@ -101,6 +107,16 @@ function loadFeedMode(): FeedMode {
   const v = localStorage.getItem(FEED_MODE_KEY);
   if (v === 'mock' || v === 'live') return v;
   return 'live';
+}
+
+function loadActiveLayoutId(): string {
+  const v = localStorage.getItem(ACTIVE_LAYOUT_KEY);
+  if (v && typeof v === 'string') return v;
+  return LAYOUT_TAB_DEFAULT_ID;
+}
+
+function persistActiveLayoutId(id: string) {
+  localStorage.setItem(ACTIVE_LAYOUT_KEY, id);
 }
 
 function uid(prefix: string) {
@@ -145,6 +161,10 @@ interface TerminalState {
   alerts: PriceAlert[];
   alertHistory: AlertFire[];
   userTemplates: LayoutTemplate[];
+  /** Active layout tab id (builtin-* or user template id). */
+  activeLayoutId: string;
+  /** Last known mark/last per symbol for the picker. */
+  lastPrices: Partial<Record<SymbolId, number>>;
   toasts: ToastItem[];
 
   initFeed: () => () => void;
@@ -190,6 +210,8 @@ interface TerminalState {
   loadTemplate: (id: string) => void;
   deleteTemplate: (id: string) => void;
   getAllTemplates: () => LayoutTemplate[];
+  /** Quick-switch a layout tab (Scalp / Profile / Default / user). */
+  applyLayoutTab: (id: string) => void;
 
   pushToast: (toast: Omit<ToastItem, 'id' | 'createdAt'>) => void;
   dismissToast: (id: string) => void;
@@ -240,7 +262,12 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
   };
 
   const onSnap = (snap: FeedSnapshot, extras?: Partial<TerminalState>) => {
-    set({ feed: snap, ...extras });
+    const last = snap.stats?.last;
+    const lastPrices =
+      last != null && Number.isFinite(last)
+        ? { ...get().lastPrices, [snap.symbol]: last }
+        : get().lastPrices;
+    set({ feed: snap, lastPrices, ...extras });
     get().evaluateAlerts(snap);
   };
 
@@ -319,6 +346,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     alerts: loadJson<PriceAlert[]>(ALERTS_KEY, []),
     alertHistory: loadJson<AlertFire[]>(ALERT_HISTORY_KEY, []),
     userTemplates: loadJson<LayoutTemplate[]>(TEMPLATES_KEY, []),
+    activeLayoutId: loadActiveLayoutId(),
+    lastPrices: {},
     toasts: [],
 
     initFeed: () => {
@@ -402,8 +431,13 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     },
 
     resetLayout: () => {
-      set({ widgets: DEFAULT_WIDGETS, layout: DEFAULT_LAYOUT });
+      set({
+        widgets: DEFAULT_WIDGETS,
+        layout: DEFAULT_LAYOUT,
+        activeLayoutId: LAYOUT_TAB_DEFAULT_ID,
+      });
       persist(DEFAULT_WIDGETS, DEFAULT_LAYOUT);
+      persistActiveLayoutId(LAYOUT_TAB_DEFAULT_ID);
     },
 
     addWidget: (type) => {
@@ -616,8 +650,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
         createdAt: Date.now(),
       };
       const userTemplates = [tpl, ...get().userTemplates];
-      set({ userTemplates });
+      set({ userTemplates, activeLayoutId: tpl.id });
       persistTemplates(userTemplates);
+      persistActiveLayoutId(tpl.id);
       get().pushToast({ kind: 'info', title: 'Layout saved', body: `"${trimmed}" stored locally` });
     },
 
@@ -628,16 +663,29 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
       if (!tpl) return;
       const widgets = structuredClone(tpl.widgets);
       const layout = structuredClone(tpl.layout);
-      set({ widgets, layout });
+      set({ widgets, layout, activeLayoutId: id });
       persist(widgets, layout);
+      persistActiveLayoutId(id);
       get().pushToast({ kind: 'info', title: 'Layout loaded', body: `"${tpl.name}" applied` });
     },
 
     deleteTemplate: (id) => {
       if (id.startsWith('builtin-')) return;
+      const wasActive = get().activeLayoutId === id;
       const userTemplates = get().userTemplates.filter((t) => t.id !== id);
-      set({ userTemplates });
+      const activeLayoutId = wasActive ? LAYOUT_TAB_DEFAULT_ID : get().activeLayoutId;
+      set({ userTemplates, activeLayoutId });
       persistTemplates(userTemplates);
+      if (wasActive) persistActiveLayoutId(LAYOUT_TAB_DEFAULT_ID);
+    },
+
+    applyLayoutTab: (id) => {
+      if (id === LAYOUT_TAB_DEFAULT_ID) {
+        get().resetLayout();
+        get().pushToast({ kind: 'info', title: 'Layout loaded', body: '"Default" applied' });
+        return;
+      }
+      get().loadTemplate(id);
     },
 
     getAllTemplates: () => [...BUILTIN_TEMPLATES, ...get().userTemplates],

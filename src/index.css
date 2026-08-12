@@ -91,9 +91,15 @@ select {
     linear-gradient(180deg, #06080c 0%, #050608 48px, #050608 100%);
 }
 
-.topbar select option {
-  background: #0a0c10;
-  color: #e4e4e7;
+.layout-tabs {
+  scrollbar-width: thin;
+  scrollbar-color: #2a3342 transparent;
+}
+.layout-tabs::-webkit-scrollbar {
+  height: 3px;
+}
+.layout-tabs::-webkit-scrollbar-thumb {
+  background: #2a3342;
 }
 
 .widget-shell {
