@@ -33,31 +33,46 @@ export function HeatmapWidget() {
       return;
     }
 
-    const frames = heatmap.slice(-80);
-    const levels = frames[0].prices.length;
-    const cellW = w / frames.length;
-    const cellH = h / levels;
+    const frames = heatmap.slice(-140);
+    const levels = frames[frames.length - 1]?.prices.length || frames[0].prices.length;
+    const cellW = w / Math.max(frames.length, 1);
+    const cellH = h / Math.max(levels, 1);
+
+    // Window-relative peak so faint levels stay visible beside large walls.
+    let peak = 0;
+    for (const frame of frames) {
+      for (let y = 0; y < levels; y++) {
+        peak = Math.max(peak, frame.bids[y] ?? 0, frame.asks[y] ?? 0);
+      }
+    }
+    const invPeak = peak > 0 ? 1 / peak : 1;
 
     for (let x = 0; x < frames.length; x++) {
       const frame = frames[x];
       for (let y = 0; y < levels; y++) {
         const bid = frame.bids[y] ?? 0;
         const ask = frame.asks[y] ?? 0;
-        const intensity = Math.min(1, Math.max(bid, ask) * 1.2);
-        if (intensity < 0.02) continue;
+        const raw = Math.max(bid, ask) * invPeak;
+        if (raw < 0.015) continue;
+        // Gamma lift — mid-tier liquidity reads clearly (MMT-like).
+        const intensity = Math.min(1, Math.pow(raw, 0.55));
         const isBid = bid >= ask;
-        const alpha = 0.15 + intensity * 0.75;
+        const alpha = 0.18 + intensity * 0.82;
         ctx.fillStyle = isBid
           ? `rgba(61, 214, 140, ${alpha})`
           : `rgba(240, 113, 120, ${alpha})`;
-        // y=0 is low price at bottom
         const py = h - (y + 1) * cellH;
-        ctx.fillRect(x * cellW, py, Math.ceil(cellW) + 0.5, Math.ceil(cellH) + 0.5);
+        ctx.fillRect(
+          Math.floor(x * cellW),
+          Math.floor(py),
+          Math.ceil(cellW) + 1,
+          Math.ceil(cellH) + 1,
+        );
       }
     }
 
-    // mid line
-    if (mid && frames[0]) {
+    // mid line from latest frame prices
+    if (mid && frames.length) {
       const prices = frames[frames.length - 1].prices;
       const lo = prices[0];
       const hi = prices[prices.length - 1];

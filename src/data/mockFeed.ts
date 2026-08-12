@@ -148,7 +148,7 @@ export class MockFeed {
     }
 
     this.mid = price;
-    for (let i = 0; i < 40; i++) this.pushHeatmapFrame(now - (40 - i) * 2, false);
+    for (let i = 0; i < 80; i++) this.pushHeatmapFrame(now - (80 - i) * 1, false);
   }
 
   private step() {
@@ -249,8 +249,8 @@ export class MockFeed {
   }
 
   private pushHeatmapFrame(time: number, trim: boolean) {
-    const levels = 48;
-    const span = this.mid * 0.012;
+    const levels = 80;
+    const span = this.mid * 0.01;
     const prices: number[] = [];
     const bids: number[] = [];
     const asks: number[] = [];
@@ -258,17 +258,20 @@ export class MockFeed {
       const p = this.mid - span + (span * 2 * i) / (levels - 1);
       prices.push(p);
       const dist = Math.abs(p - this.mid) / span;
-      const base = Math.max(0, 1 - dist) * (0.2 + this.rand() * 0.8);
+      // Cluster liquidity near mid with occasional deeper walls (MMT-like).
+      const wall = this.rand() < 0.04 ? 0.55 + this.rand() * 0.45 : 0;
+      const base = Math.max(0, 1 - dist ** 1.15) * (0.15 + this.rand() * 0.75) + wall;
+      const intensity = Math.min(1, Math.log1p(base * 4) / Math.log1p(4));
       if (p <= this.mid) {
-        bids.push(base);
-        asks.push(this.rand() * 0.05);
+        bids.push(intensity);
+        asks.push(this.rand() * 0.04);
       } else {
-        asks.push(base);
-        bids.push(this.rand() * 0.05);
+        asks.push(intensity);
+        bids.push(this.rand() * 0.04);
       }
     }
     this.heatmap.push({ time, prices, bids, asks });
-    if (trim && this.heatmap.length > 90) this.heatmap.shift();
+    if (trim && this.heatmap.length > 160) this.heatmap.shift();
   }
 
   private buildBook(): OrderBook {

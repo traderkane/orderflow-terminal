@@ -26,8 +26,9 @@ const WS_SPOT_VISION = 'wss://data-stream.binance.vision/stream?streams=';
 const MAX_TRADES = 120;
 const MAX_LIQS = 80;
 const MAX_CANDLES = 240;
-const MAX_HEATMAP = 90;
-const HEATMAP_LEVELS = 48;
+const MAX_HEATMAP = 160;
+const HEATMAP_LEVELS = 96;
+const HEATMAP_FRAME_MS = 200;
 const EMIT_MS = 100;
 const CONNECT_TIMEOUT_MS = 8000;
 
@@ -113,6 +114,9 @@ export class BinanceFeed {
   private liquidations: Liquidation[] = [];
   private cvdSeries: CvdPoint[] = [];
   private heatmap: HeatmapFrame[] = [];
+  /** Full depth sides used for heatmap (not truncated to ladder widget size). */
+  private depthBids: { price: number; size: number }[] = [];
+  private depthAsks: { price: number; size: number }[] = [];
   private volumeProfile = new Map<number, VolumeProfileBin>();
   private book: OrderBook = { bids: [], asks: [], spread: 0, mid: 0 };
   private cvd = 0;
@@ -210,6 +214,8 @@ export class BinanceFeed {
     this.liquidations = [];
     this.cvdSeries = [];
     this.heatmap = [];
+    this.depthBids = [];
+    this.depthAsks = [];
     this.volumeProfile.clear();
     this.book = { bids: [], asks: [], spread: 0, mid: 0 };
     this.cvd = 0;
@@ -585,13 +591,15 @@ export class BinanceFeed {
     }
     const bestBid = bids[0]?.price ?? this.last;
     const bestAsk = asks[0]?.price ?? this.last;
+    this.depthBids = bids;
+    this.depthAsks = asks;
     this.book = {
       bids: bids.slice(0, 22),
       asks: asks.slice(0, 22),
       spread: Math.max(0, bestAsk - bestBid),
       mid: (bestAsk + bestBid) / 2 || this.last,
     };
-    this.pushHeatmapFrame(Math.floor(Date.now() / 1000));
+    this.pushHeatmapFrame(Date.now());
     this.dirty = true;
   }
 
@@ -722,53 +730,93 @@ export class BinanceFeed {
     this.volumeProfile.set(key, prev);
   }
 
-  private pushHeatmapFrame(time: number) {
+  private inferTick(
+    bids: { price: number; size: number }[],
+    asks: { price: number; size: number }[],
+  ): number {
+    let tick = Infinity;
+    for (let i = 1; i < Math.min(bids.length, 8); i++) {
+      const d = Math.abs(bids[i - 1].price - bids[i].price);
+      if (d > 0) tick = Math.min(tick, d);
+    }
+    for (let i = 1; i < Math.min(asks.length, 8); i++) {
+      const d = Math.abs(asks[i].price - asks[i - 1].price);
+      if (d > 0) tick = Math.min(tick, d);
+    }
+    return Number.isFinite(tick) && tick > 0 ? tick : 0;
+  }
+
+  private pushHeatmapFrame(nowMs: number) {
     const mid = this.book.mid || this.last;
     if (!mid) return;
-    const span = mid * 0.008;
-    const prices: number[] = [];
-    const bids: number[] = [];
-    const asks: number[] = [];
 
-    let maxBid = 0;
-    let maxAsk = 0;
+    const srcBids = this.depthBids.length ? this.depthBids : this.book.bids;
+    const srcAsks = this.depthAsks.length ? this.depthAsks : this.book.asks;
+    if (!srcBids.length && !srcAsks.length) return;
+
+    const lowestBid = srcBids[srcBids.length - 1]?.price ?? mid;
+    const highestAsk = srcAsks[srcAsks.length - 1]?.price ?? mid;
+    const bookHalf = Math.max(mid - lowestBid, highestAsk - mid, 0);
+    const tick = this.inferTick(srcBids, srcAsks) || Math.max(mid * 1e-6, 0.01);
+    // Wider than top-of-book, but tick-scaled so depth20 fills many rows (not one band).
+    const halfLevels = (HEATMAP_LEVELS - 1) / 2;
+    const span = Math.min(
+      mid * 0.02,
+      Math.max(bookHalf * 1.35, tick * halfLevels, tick * 12),
+    );
+
+    const prices: number[] = new Array(HEATMAP_LEVELS);
     const bidSizes = new Array(HEATMAP_LEVELS).fill(0);
     const askSizes = new Array(HEATMAP_LEVELS).fill(0);
 
     for (let i = 0; i < HEATMAP_LEVELS; i++) {
-      prices.push(mid - span + (span * 2 * i) / (HEATMAP_LEVELS - 1));
+      prices[i] = mid - span + (span * 2 * i) / (HEATMAP_LEVELS - 1);
     }
 
     const bucketIndex = (price: number) => {
-      const t = (price - (mid - span)) / (span * 2);
+      const t = (price - (mid - span)) / (span * 2 || 1);
       return Math.max(0, Math.min(HEATMAP_LEVELS - 1, Math.round(t * (HEATMAP_LEVELS - 1))));
     };
 
-    for (const b of this.book.bids) {
-      const idx = bucketIndex(b.price);
-      bidSizes[idx] += b.size;
-      maxBid = Math.max(maxBid, bidSizes[idx]);
-    }
-    for (const a of this.book.asks) {
-      const idx = bucketIndex(a.price);
-      askSizes[idx] += a.size;
-      maxAsk = Math.max(maxAsk, askSizes[idx]);
-    }
+    // Soft-deposit into neighboring bins so liquidity reads as dense bands.
+    const deposit = (arr: number[], price: number, size: number) => {
+      const idx = bucketIndex(price);
+      arr[idx] += size;
+      if (idx > 0) arr[idx - 1] += size * 0.35;
+      if (idx < HEATMAP_LEVELS - 1) arr[idx + 1] += size * 0.35;
+      if (idx > 1) arr[idx - 2] += size * 0.12;
+      if (idx < HEATMAP_LEVELS - 2) arr[idx + 2] += size * 0.12;
+    };
 
+    for (const b of srcBids) deposit(bidSizes, b.price, b.size);
+    for (const a of srcAsks) deposit(askSizes, a.price, a.size);
+
+    let maxBid = 0;
+    let maxAsk = 0;
     for (let i = 0; i < HEATMAP_LEVELS; i++) {
-      bids.push(maxBid ? bidSizes[i] / maxBid : 0);
-      asks.push(maxAsk ? askSizes[i] / maxAsk : 0);
+      maxBid = Math.max(maxBid, bidSizes[i]);
+      maxAsk = Math.max(maxAsk, askSizes[i]);
     }
 
-    // Avoid flooding identical frames every 100ms — keep ~2/sec feel
+    // Log intensity — relative liquidity pops without one whale washing out the book.
+    const norm = (v: number, max: number) =>
+      max > 0 ? Math.log1p(v) / Math.log1p(max) : 0;
+
+    const bids: number[] = new Array(HEATMAP_LEVELS);
+    const asks: number[] = new Array(HEATMAP_LEVELS);
+    for (let i = 0; i < HEATMAP_LEVELS; i++) {
+      bids[i] = norm(bidSizes[i], maxBid);
+      asks[i] = norm(askSizes[i], maxAsk);
+    }
+
     const prev = this.heatmap[this.heatmap.length - 1];
-    if (prev && time - prev.time < 1) {
+    if (prev && nowMs - prev.time < HEATMAP_FRAME_MS) {
       prev.prices = prices;
       prev.bids = bids;
       prev.asks = asks;
-      prev.time = time;
+      prev.time = nowMs;
     } else {
-      this.heatmap.push({ time, prices, bids, asks });
+      this.heatmap.push({ time: nowMs, prices, bids, asks });
       if (this.heatmap.length > MAX_HEATMAP) this.heatmap.shift();
     }
   }
