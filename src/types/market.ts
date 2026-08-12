@@ -43,6 +43,21 @@ export interface Liquidation {
   exchange: ExchangeId;
 }
 
+export interface LiquidationMapLevel {
+  price: number;
+  /** Estimated long-liquidation density if price falls here */
+  longDensity: number;
+  /** Estimated short-liquidation density if price rises here */
+  shortDensity: number;
+}
+
+/** Modelled leverage-ladder liquidation density (not exchange-proprietary). */
+export interface LiquidationMap {
+  mark: number;
+  levels: LiquidationMapLevel[];
+  maxDensity: number;
+}
+
 export interface VwapPoint {
   time: number;
   value: number;
@@ -110,6 +125,7 @@ export type WidgetType =
   | 'volumeProfile'
   | 'footprint'
   | 'liquidations'
+  | 'liquidationMap'
   | 'stats';
 
 export interface WidgetInstance {

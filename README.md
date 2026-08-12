@@ -41,7 +41,8 @@ npm run preview
 6. **Volume Profile** — VPVR-style buy/sell profile with POC
 7. **Footprint** — candle-aligned clustered bid/ask volume with imbalance highlights
 8. **Liquidations** — forced order feed
-9. **Stats** — last, change, funding, OI, spread, volume
+9. **Liq Map** — modelled leverage-ladder liquidation density around mark
+10. **Stats** — last, change, funding, OI, spread, volume
 
 ## Live Binance feed
 
