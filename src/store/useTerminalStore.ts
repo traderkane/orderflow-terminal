@@ -24,6 +24,11 @@ import {
   readMetric,
 } from '../lib/alerts';
 import { BUILTIN_TEMPLATES } from '../lib/layoutPresets';
+import {
+  loadChartInterval,
+  persistChartInterval,
+  type ChartInterval,
+} from '../lib/chartIntervals';
 
 const LAYOUT_KEY = 'flow-terminal-layout-v5';
 const WIDGETS_KEY = 'flow-terminal-widgets-v5';
@@ -90,6 +95,7 @@ interface TerminalState {
   status: FeedStatus;
   venueStatus: Record<ExchangeId, FeedStatus>;
   feedMode: FeedMode;
+  chartInterval: ChartInterval;
   feed: FeedSnapshot | null;
   widgets: WidgetInstance[];
   layout: LayoutItem[];
@@ -109,6 +115,7 @@ interface TerminalState {
 
   initFeed: () => () => void;
   setFeedMode: (mode: FeedMode) => void;
+  setChartInterval: (interval: ChartInterval) => void;
   setSymbol: (symbol: SymbolId) => void;
   toggleExchange: (ex: ExchangeId) => void;
   setSpeed: (speed: Speed) => void;
@@ -198,6 +205,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     mockFeed.setSymbol(get().symbol);
     mockFeed.setExchanges(get().exchanges);
     mockFeed.setSpeed(get().speed);
+    mockFeed.setChartInterval(get().chartInterval);
     unsubData = mockFeed.subscribe((snap) => {
       onSnap(snap, { status: mockFeed.getStatus(), feedMode: 'mock' });
     });
@@ -213,6 +221,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     cleanupSubs();
     stopAll();
     fallbackArmed = true;
+    liveFeed.setChartInterval(get().chartInterval);
     liveFeed.setSymbol(get().symbol);
     liveFeed.setFallbackHandler(() => {
       if (!fallbackArmed) return;
@@ -239,6 +248,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     status: 'paused',
     venueStatus: { Binance: 'paused', Bybit: 'paused', OKX: 'paused' },
     feedMode: loadFeedMode(),
+    chartInterval: loadChartInterval(),
     feed: null,
     widgets: loadJson(WIDGETS_KEY, DEFAULT_WIDGETS),
     layout: loadJson(LAYOUT_KEY, DEFAULT_LAYOUT),
@@ -277,6 +287,13 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
         liveFeed.setFallbackHandler(null);
         attachMock();
       }
+    },
+
+    setChartInterval: (interval) => {
+      persistChartInterval(interval);
+      set({ chartInterval: interval });
+      if (get().feedMode === 'live') liveFeed.setChartInterval(interval);
+      else mockFeed.setChartInterval(interval);
     },
 
     setSymbol: (symbol) => {

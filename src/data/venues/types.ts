@@ -44,4 +44,6 @@ export interface VenueClient {
   start(symbol: SymbolId, handlers: VenueHandlers): void;
   stop(): void;
   setSymbol(symbol: SymbolId): void;
+  /** Binance (and similar) chart kline interval; optional on other venues. */
+  setKlineInterval?(interval: import('../../lib/chartIntervals').ChartInterval): void;
 }

@@ -5,6 +5,7 @@ import {
   mergeTradesIntoTpo,
   tpoTick,
 } from '../data/tpo';
+import { intervalToSec } from '../lib/chartIntervals';
 import { useTerminalStore } from '../store/useTerminalStore';
 
 const MAX_ROWS = 48;
@@ -24,19 +25,21 @@ export function TpoWidget() {
   const trades = useTerminalStore((s) => s.feed?.trades) ?? [];
   const symbol = useTerminalStore((s) => s.symbol);
   const last = useTerminalStore((s) => s.feed?.stats.last) ?? 0;
+  const chartInterval = useTerminalStore((s) => s.chartInterval);
 
   const profile = useMemo(() => {
     const tick = tpoTick(symbol);
+    // No separate TPO TF — builds from chart candles at the active chart interval.
     const base = buildTpoFromCandles(candles, {
       symbol,
-      candleSec: 60,
+      candleSec: intervalToSec(chartInterval),
       maxCandles: MAX_CANDLES,
       tick,
     });
     // Trades densify prints inside known period brackets (live + mock).
     const tradePts = trades.map((t) => ({ time: t.time, price: t.price }));
     return mergeTradesIntoTpo(base, tradePts, tick);
-  }, [candles, trades, symbol]);
+  }, [candles, trades, symbol, chartInterval]);
 
   const view = useMemo(() => {
     let levels = profile.levels;
@@ -65,8 +68,8 @@ export function TpoWidget() {
   return (
     <div className="flex h-full flex-col overflow-hidden font-mono text-[10px] leading-[1.1]">
       <div className="mb-0.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 border-b border-terminal-border/60 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em] text-terminal-label">
-        <span>
-          TPO · {formatPeriodLabel(profile.periodSec)} brackets · tick{' '}
+        <span title="No separate TPO timeframe — uses chart candles. Footprint stays 1m.">
+          TPO · chart TF · {formatPeriodLabel(profile.periodSec)} brackets · tick{' '}
           {profile.tick}
         </span>
         <span className="normal-case tracking-normal text-zinc-400">

@@ -6,6 +6,10 @@ import type {
   SymbolId,
   Trade,
 } from '../../types/market';
+import {
+  binanceKlineInterval,
+  type ChartInterval,
+} from '../../lib/chartIntervals';
 import { venueSymbol } from './symbols';
 import type { VenueClient, VenueHandlers, VenueLevel } from './types';
 
@@ -34,6 +38,7 @@ export class BinanceVenue implements VenueClient {
   private sawFuturesTrade = false;
   private status: FeedStatus = 'paused';
   private pair = 'btcusdt';
+  private klineInterval: ChartInterval = '1m';
 
   start(symbol: SymbolId, handlers: VenueHandlers) {
     this.handlers = handlers;
@@ -65,6 +70,12 @@ export class BinanceVenue implements VenueClient {
     if (this.symbol === symbol) return;
     this.symbol = symbol;
     this.pair = venueSymbol('Binance', symbol);
+    if (this.running) void this.bootstrapAndConnect();
+  }
+
+  setKlineInterval(interval: ChartInterval) {
+    if (this.klineInterval === interval) return;
+    this.klineInterval = interval;
     if (this.running) void this.bootstrapAndConnect();
   }
 
@@ -119,12 +130,13 @@ export class BinanceVenue implements VenueClient {
       }
     };
 
+    const iv = binanceKlineInterval(this.klineInterval);
     const klines =
       (await tryJson<unknown[][]>(
-        `${REST_FAPI}/fapi/v1/klines?symbol=${pair}&interval=1m&limit=200`,
+        `${REST_FAPI}/fapi/v1/klines?symbol=${pair}&interval=${iv}&limit=200`,
       )) ??
       (await tryJson<unknown[][]>(
-        `${REST_VISION}/api/v3/klines?symbol=${pair}&interval=1m&limit=200`,
+        `${REST_VISION}/api/v3/klines?symbol=${pair}&interval=${iv}&limit=200`,
       ));
 
     const ticker =
@@ -172,10 +184,11 @@ export class BinanceVenue implements VenueClient {
     if (!this.running) return;
     this.sawFuturesTrade = false;
     const p = this.pair;
+    const kline = binanceKlineInterval(this.klineInterval);
     const streams = [
       `${p}@aggTrade`,
       `${p}@depth20@100ms`,
-      `${p}@kline_1m`,
+      `${p}@kline_${kline}`,
       `${p}@markPrice`,
       '!forceOrder@arr',
     ].join('/');
@@ -252,7 +265,8 @@ export class BinanceVenue implements VenueClient {
   private connectSpotFallback() {
     if (this.spotWs || !this.running) return;
     const p = this.pair;
-    const streams = [`${p}@aggTrade`, `${p}@kline_1m`].join('/');
+    const kline = binanceKlineInterval(this.klineInterval);
+    const streams = [`${p}@aggTrade`, `${p}@kline_${kline}`].join('/');
     const ws = new WebSocket(`${WS_SPOT_VISION}${streams}`);
     this.spotWs = ws;
     ws.onmessage = (ev) => {

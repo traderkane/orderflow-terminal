@@ -13,6 +13,12 @@ import type {
 } from '../types/market';
 import type { FeedListener, FeedSnapshot } from './feedTypes';
 import {
+  bybitKlineInterval,
+  intervalToSec,
+  okxKlineBar,
+  type ChartInterval,
+} from '../lib/chartIntervals';
+import {
   bumpFootprint,
   footprintStep,
   serializeFootprint,
@@ -32,6 +38,8 @@ const MAX_HEATMAP = 160;
 const HEATMAP_LEVELS = 96;
 const HEATMAP_FRAME_MS = 200;
 const EMIT_MS = 100;
+/** Footprint / TPO stay on 1m buckets regardless of chart TF. */
+const FOOTPRINT_SEC = 60;
 const ALL_EXCHANGES: ExchangeId[] = ['Binance', 'Bybit', 'OKX'];
 
 function profileStep(symbol: SymbolId) {
@@ -91,6 +99,7 @@ export class LiveFeed {
   private changePct24 = 0;
   private fundingRate = 0;
   private openInterest = 0;
+  private chartInterval: ChartInterval = '1m';
   private candleSec = 60;
   private candlesSeeded = false;
 
@@ -186,6 +195,26 @@ export class LiveFeed {
     this.dirty = true;
   }
 
+  /** Chart candle TF — rebootstrap/resubscribe klines; footprint stays 1m. */
+  setChartInterval(interval: ChartInterval) {
+    if (this.chartInterval === interval) return;
+    this.chartInterval = interval;
+    this.candleSec = intervalToSec(interval);
+    this.resetCandlesOnly();
+    this.venues.Binance.setKlineInterval?.(interval);
+    if (this.running) {
+      void this.ensureHistoryBootstrap().finally(() => {
+        if (!this.running) return;
+        // BinanceVenue.setKlineInterval already rebootstrap+reconnects when running.
+        // When Binance is off, history comes from Bybit/OKX REST above.
+        this.dirty = true;
+        this.emit();
+      });
+    } else {
+      this.emit();
+    }
+  }
+
   setSpeed(_speed: 1 | 2) {
     /* mock only */
   }
@@ -194,10 +223,10 @@ export class LiveFeed {
     return this.status;
   }
 
-  /** When Binance is off, pull 1m history from Bybit (or OKX) so chart/CVD still seed. */
+  /** When Binance is off, pull chart-TF history from Bybit (or OKX) so chart/CVD still seed. */
   private async ensureHistoryBootstrap() {
     if (this.exchanges.includes('Binance')) {
-      // BinanceVenue REST handles klines + ticker
+      // BinanceVenue REST handles klines + ticker for current chartInterval
       return;
     }
     if (this.candlesSeeded && this.candles.length) return;
@@ -218,7 +247,7 @@ export class LiveFeed {
       const body = await tryJson<{
         result?: { list?: string[][] };
       }>(
-        `https://api.bybit.com/v5/market/kline?category=linear&symbol=${pair}&interval=1&limit=200`,
+        `https://api.bybit.com/v5/market/kline?category=linear&symbol=${pair}&interval=${bybitKlineInterval(this.chartInterval)}&limit=200`,
       );
       const list = body?.result?.list;
       if (list?.length) {
@@ -244,7 +273,7 @@ export class LiveFeed {
     if (this.exchanges.includes('OKX')) {
       const instId = venueSymbol('OKX', this.symbol);
       const body = await tryJson<{ data?: string[][] }>(
-        `https://www.okx.com/api/v5/market/candles?instId=${instId}&bar=1m&limit=200`,
+        `https://www.okx.com/api/v5/market/candles?instId=${instId}&bar=${okxKlineBar(this.chartInterval)}&limit=200`,
       );
       const list = body?.data;
       if (list?.length) {
@@ -268,6 +297,7 @@ export class LiveFeed {
 
   private syncVenues() {
     const handlers = this.makeHandlers();
+    this.venues.Binance.setKlineInterval?.(this.chartInterval);
     for (const ex of ALL_EXCHANGES) {
       if (this.exchanges.includes(ex)) {
         this.venues[ex].start(this.symbol, handlers);
@@ -374,6 +404,16 @@ export class LiveFeed {
     this.dirty = false;
   }
 
+  /** Clear candle/CVD series for TF switch without dropping tape/book/footprint. */
+  private resetCandlesOnly() {
+    this.candles = [];
+    this.cvdSeries = [];
+    this.cvd = 0;
+    this.volumeProfile.clear();
+    this.candlesSeeded = false;
+    this.dirty = false;
+  }
+
   private setStatus(status: FeedStatus) {
     if (this.status === status) return;
     this.status = status;
@@ -405,7 +445,7 @@ export class LiveFeed {
     );
     bumpFootprint(
       this.footprintBars,
-      this.candleSec,
+      FOOTPRINT_SEC,
       footprintStep(this.symbol),
       Math.floor(trade.time / 1000),
       trade.price,
@@ -502,7 +542,8 @@ export class LiveFeed {
     this.cvd = 0;
     this.cvdSeries = [];
     this.volumeProfile.clear();
-    this.footprintBars = [];
+    // Footprint stays 1m — only reseed from candles when chart TF is 1m.
+    if (this.candleSec === FOOTPRINT_SEC) this.footprintBars = [];
     const step = footprintStep(this.symbol);
     for (const c of this.candles) {
       const delta = (c.close >= c.open ? 1 : -1) * c.volume * 0.55;
@@ -511,7 +552,9 @@ export class LiveFeed {
       const buy = c.close >= c.open ? c.volume * 0.55 : c.volume * 0.45;
       const sell = c.volume - buy;
       this.bumpProfile(c.close, buy, sell);
-      bumpFootprint(this.footprintBars, this.candleSec, step, c.time, c.close, buy, sell);
+      if (this.candleSec === FOOTPRINT_SEC) {
+        bumpFootprint(this.footprintBars, FOOTPRINT_SEC, step, c.time, c.close, buy, sell);
+      }
     }
   }
 

@@ -11,6 +11,7 @@ import type {
   VolumeProfileBin,
 } from '../types/market';
 import type { FeedListener, FeedSnapshot } from './feedTypes';
+import { intervalToSec, type ChartInterval } from '../lib/chartIntervals';
 import {
   bumpFootprint,
   footprintStep,
@@ -63,7 +64,10 @@ export class MockFeed {
   private fundingRate = 0.0001;
   private openInterest = 1_250_000_000;
   private tick = 0;
+  private chartInterval: ChartInterval = '1m';
   private candleSec = 60;
+  /** Footprint stays on 1m regardless of chart TF. */
+  private readonly footprintSec = 60;
 
   constructor() {
     this.resetSymbol('BTC/USD');
@@ -101,6 +105,15 @@ export class MockFeed {
 
   setExchanges(exchanges: ExchangeId[]) {
     this.exchanges = exchanges.length ? exchanges : [...EXCHANGES];
+  }
+
+  setChartInterval(interval: ChartInterval) {
+    if (this.chartInterval === interval) return;
+    this.chartInterval = interval;
+    this.candleSec = intervalToSec(interval);
+    // Rebuild candles at the new TF; keep mid/day stats continuity via resetSymbol.
+    this.resetSymbol(this.symbol);
+    this.emit();
   }
 
   getStatus() {
@@ -155,15 +168,17 @@ export class MockFeed {
       const buy = volume * (0.4 + this.rand() * 0.3);
       const sell = volume * (0.4 + this.rand() * 0.3);
       this.bumpProfile(close, buy, sell);
-      bumpFootprint(
-        this.footprintBars,
-        this.candleSec,
-        footprintStep(this.symbol),
-        t,
-        close,
-        buy,
-        sell,
-      );
+      if (this.candleSec === this.footprintSec) {
+        bumpFootprint(
+          this.footprintBars,
+          this.footprintSec,
+          footprintStep(this.symbol),
+          t,
+          close,
+          buy,
+          sell,
+        );
+      }
     }
 
     this.mid = price;
@@ -194,7 +209,7 @@ export class MockFeed {
       this.bumpProfile(price, side === 'buy' ? size : 0, side === 'sell' ? size : 0);
       bumpFootprint(
         this.footprintBars,
-        this.candleSec,
+        this.footprintSec,
         footprintStep(this.symbol),
         now,
         price,

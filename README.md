@@ -33,7 +33,7 @@ npm run preview
 
 ## Widgets
 
-1. **Chart** — candles + volume; toggles for Heatmap, VPVR Profile, trade Bubbles, VWAP, CVD, liquidation markers; drawing tools (H-Line / Trend / Rect / Fib / Clear) persisted per symbol
+1. **Chart** — candles + volume; TF pills **1m / 5m / 15m / 1h** (persisted); toggles for Heatmap, VPVR Profile, trade Bubbles, VWAP, CVD, liquidation markers; drawing tools (H-Line / Trend / Rect / Fib / Clear) persisted per symbol
 2. **Order Book / DOM** — bids/asks, depth bars, spread
 3. **Trades Tape** — scrolling aggressor buys/sells with size highlighting
 4. **Order Book Heatmap** — canvas time × price liquidity
@@ -51,7 +51,7 @@ npm run preview
 
 | Venue | Instruments | Streams |
 | --- | --- | --- |
-| **Binance** | `btcusdt` / `ethusdt` USDT-M | `aggTrade`, `depth20@100ms`, `kline_1m`, `markPrice`, `!forceOrder@arr` |
+| **Binance** | `btcusdt` / `ethusdt` USDT-M | `aggTrade`, `depth20@100ms`, `kline_{TF}`, `markPrice`, `!forceOrder@arr` |
 | **Bybit** | `BTCUSDT` / `ETHUSDT` linear | `publicTrade`, `orderbook.50`, `tickers` |
 | **OKX** | `BTC-USDT-SWAP` / `ETH-USDT-SWAP` | `trades`, `books5`, `funding-rate` |
 
@@ -71,6 +71,14 @@ Resilience notes:
 - Binance futures WS is primary; spot Vision fallback for tape/klines if futures aggTrade is filtered.
 - If no selected venue becomes live within ~12s, the app falls back to mock.
 
+
+## Chart timeframes
+
+Toolbar pills on the chart: **1m · 5m · 15m · 1h** (stored in `localStorage` as `flow-terminal-chart-interval-v1`).
+
+- **Live** — Binance futures REST + WS klines rebootstrap/resubscribe for the selected interval (Bybit/OKX REST history when Binance is deselected).
+- **Mock** — synthetic candles regenerated at the selected TF.
+- **Limitation** — Footprint stays on **1m** buckets (does not follow chart TF). TPO has no separate TF control; it builds from the active chart candles.
 
 ## Mock feed
 

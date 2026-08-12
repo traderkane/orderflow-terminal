@@ -25,6 +25,7 @@ import {
   type DrawingTool,
   type TwoPointDraft,
 } from '../lib/chartDrawings';
+import { CHART_INTERVALS, type ChartInterval } from '../lib/chartIntervals';
 import { useTerminalStore } from '../store/useTerminalStore';
 import type { Candle, HeatmapFrame, Trade, VolumeProfileBin } from '../types/market';
 
@@ -118,6 +119,8 @@ export function ChartWidget() {
   const showHeatmap = useTerminalStore((s) => s.showHeatmap);
   const showProfile = useTerminalStore((s) => s.showProfile);
   const showBubbles = useTerminalStore((s) => s.showBubbles);
+  const chartInterval = useTerminalStore((s) => s.chartInterval);
+  const setChartInterval = useTerminalStore((s) => s.setChartInterval);
   const setShowVwap = useTerminalStore((s) => s.setShowVwap);
   const setShowCvdOverlay = useTerminalStore((s) => s.setShowCvdOverlay);
   const setShowLiqMarkers = useTerminalStore((s) => s.setShowLiqMarkers);
@@ -843,13 +846,25 @@ export function ChartWidget() {
 
   return (
     <div className={`relative flex h-full flex-col ${cursorClass}`}>
-      <div className="absolute left-1.5 top-1.5 z-10 flex overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
-        <Toggle label="Heatmap" on={showHeatmap} onClick={() => setShowHeatmap(!showHeatmap)} />
-        <Toggle label="Profile" on={showProfile} onClick={() => setShowProfile(!showProfile)} />
-        <Toggle label="Bubbles" on={showBubbles} onClick={() => setShowBubbles(!showBubbles)} />
-        <Toggle label="VWAP" on={showVwap} onClick={() => setShowVwap(!showVwap)} />
-        <Toggle label="CVD" on={showCvdOverlay} onClick={() => setShowCvdOverlay(!showCvdOverlay)} />
-        <Toggle label="Liqs" on={showLiqMarkers} onClick={() => setShowLiqMarkers(!showLiqMarkers)} />
+      <div className="absolute left-1.5 top-1.5 z-10 flex items-center gap-1">
+        <div className="flex overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
+          {CHART_INTERVALS.map((iv) => (
+            <TfPill
+              key={iv}
+              label={iv}
+              on={chartInterval === iv}
+              onClick={() => setChartInterval(iv)}
+            />
+          ))}
+        </div>
+        <div className="flex overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
+          <Toggle label="Heatmap" on={showHeatmap} onClick={() => setShowHeatmap(!showHeatmap)} />
+          <Toggle label="Profile" on={showProfile} onClick={() => setShowProfile(!showProfile)} />
+          <Toggle label="Bubbles" on={showBubbles} onClick={() => setShowBubbles(!showBubbles)} />
+          <Toggle label="VWAP" on={showVwap} onClick={() => setShowVwap(!showVwap)} />
+          <Toggle label="CVD" on={showCvdOverlay} onClick={() => setShowCvdOverlay(!showCvdOverlay)} />
+          <Toggle label="Liqs" on={showLiqMarkers} onClick={() => setShowLiqMarkers(!showLiqMarkers)} />
+        </div>
       </div>
 
       <div className="absolute right-1.5 top-1.5 z-10 flex overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
@@ -917,6 +932,31 @@ export function ChartWidget() {
         </button>
       )}
     </div>
+  );
+}
+
+function TfPill({
+  label,
+  on,
+  onClick,
+}: {
+  label: ChartInterval;
+  on: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={`Chart timeframe ${label}`}
+      onClick={onClick}
+      className={`min-w-[28px] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+        on
+          ? 'bg-accent/20 text-accent'
+          : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 
