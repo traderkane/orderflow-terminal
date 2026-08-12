@@ -15,7 +15,7 @@ function venueDot(status: FeedStatus | undefined, selected: boolean) {
 }
 
 const ghostBtn =
-  "h-6 rounded-[2px] px-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-terminal-muted transition-colors hover:bg-white/[0.04] hover:text-zinc-300";
+  "h-5 rounded-[2px] px-1.5 text-[9px] font-medium uppercase tracking-[0.1em] text-terminal-muted transition-colors hover:bg-white/[0.04] hover:text-zinc-300";
 
 export function TopBar() {
   const exchanges = useTerminalStore((s) => s.exchanges);
@@ -44,14 +44,14 @@ export function TopBar() {
           : "bg-amber-400";
 
   return (
-    <header className="topbar flex h-8 shrink-0 items-center gap-1.5 border-b border-terminal-border bg-terminal-chrome px-2">
+    <header className="topbar flex h-7 shrink-0 items-center gap-1 border-b border-terminal-border bg-terminal-chrome px-1.5">
       {/* Dominant: symbol + last + change */}
       <div className="flex min-w-0 items-baseline gap-2">
         <SymbolPicker />
 
         {stats ? (
           <div className="flex items-baseline gap-1.5">
-            <span className="font-mono text-[13px] font-semibold tabular-nums leading-none text-zinc-50">
+            <span className="font-mono text-[12px] font-semibold tabular-nums leading-none text-zinc-50">
               {fmtPrice(stats.last, 2)}
             </span>
             <span
@@ -81,11 +81,11 @@ export function TopBar() {
             key={mode}
             type="button"
             onClick={() => setFeedMode(mode as FeedMode)}
-            className={`px-1.5 text-[9px] font-medium uppercase tracking-[0.14em] transition-colors ${
+            className={`px-1.5 text-[9px] font-medium uppercase tracking-[0.1em] transition-colors ${
               feedMode === mode
                 ? mode === "live"
                   ? "bg-up/15 text-up"
-                  : "bg-zinc-800/80 text-zinc-100"
+                  : "bg-accent/15 text-accent"
                 : "text-terminal-muted hover:text-zinc-400"
             }`}
             title={
@@ -140,7 +140,7 @@ export function TopBar() {
           title={`Feed status: ${status}`}
         >
           <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
-          <span className="text-[9px] font-medium uppercase tracking-[0.14em] text-terminal-muted">
+          <span className="text-[9px] font-medium uppercase tracking-[0.1em] text-terminal-muted">
             {status}
           </span>
         </div>
@@ -162,7 +162,7 @@ export function TopBar() {
                 type="button"
                 onClick={() => setSpeed(s)}
                 className={`px-1.5 font-mono text-[10px] ${
-                  speed === s ? "bg-zinc-800 text-zinc-100" : "text-terminal-muted"
+                  speed === s ? "bg-accent/15 text-accent" : "text-terminal-muted"
                 }`}
               >
                 {s}x

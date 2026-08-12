@@ -63,8 +63,8 @@ select {
 
 /* Grid chrome — quiet, pro */
 .react-grid-item.react-grid-placeholder {
-  background: rgba(14, 203, 129, 0.08) !important;
-  border: 1px dashed rgba(14, 203, 129, 0.35);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent) !important;
+  border: 1px dashed color-mix(in srgb, var(--color-accent) 40%, transparent);
   border-radius: 2px;
   opacity: 1 !important;
 }
@@ -132,8 +132,8 @@ select {
   border-color: #1c222d;
 }
 .widget-shell:focus-within {
-  border-color: #2a3342;
-  box-shadow: var(--shadow-panel), 0 0 0 1px rgba(14, 203, 129, 0.07);
+  border-color: color-mix(in srgb, var(--color-accent) 38%, var(--color-terminal-border));
+  box-shadow: var(--shadow-panel), 0 0 0 1px color-mix(in srgb, var(--color-accent) 14%, transparent);
 }
 
 
@@ -176,11 +176,11 @@ select {
 }
 .tab-dock-tab[data-active='true'] {
   color: #e4e4e7;
-  border-bottom-color: #f0b90b;
+  border-bottom-color: var(--color-accent);
 }
 .tab-dock-shell .drag-handle {
-  gap: 4px;
-  height: 1.75rem; /* h-7 — room for underline vs grip/close */
+  gap: 3px;
+  height: 1.375rem; /* denser — room for underline vs grip/close */
 }
 .tab-dock-body {
   height: 100%;
@@ -785,9 +785,84 @@ html[data-theme="light"] .side-drawer-panel {
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.08);
 }
 
-/* App rail — MMT V5-style slim left chrome (~40px) */
+/* App rail — MMT V5-style slim left chrome (~36px) */
 .app-rail {
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
+}
+.rail-btn {
+  color: var(--color-terminal-muted);
+  background: transparent;
+}
+.rail-btn:hover {
+  color: #d4d4d8;
+  background: rgba(255, 255, 255, 0.04);
+}
+.rail-btn[data-active='true'] {
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+.rail-btn[data-active='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 14px;
+  border-radius: 0 1px 1px 0;
+  background: var(--color-accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+/* Layout tabs — gold underline active (tokenized) */
+.layout-tab {
+  color: var(--color-terminal-muted);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  border-radius: 0;
+}
+.layout-tab:hover {
+  color: #a1a1aa;
+  background: rgba(255, 255, 255, 0.03);
+}
+.layout-tab[data-active='true'] {
+  color: #e4e4e7;
+  border-bottom-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+/* Watchlist chips — dense gold active cue */
+.watch-chip {
+  background: transparent;
+}
+.watch-chip:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.watch-chip[data-active='true'] {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  box-shadow: inset 0 -1px 0 var(--color-accent);
+}
+.watch-chip[data-active='true'] .watch-chip-symbol {
+  color: #fafafa;
+}
+
+/* Focused chrome controls — gold accent ring/border */
+.chrome-input:focus,
+.chrome-input:focus-visible {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-terminal-border)) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent);
+  outline: none;
+}
+.chrome-focus:focus-visible {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+/* Maximized chart — subtle gold frame without touching ChartWidget */
+.grid-chart-maximized .is-chart-widget .widget-shell {
+  border-color: color-mix(in srgb, var(--color-accent) 42%, var(--color-terminal-border));
+  box-shadow: var(--shadow-panel), 0 0 0 1px color-mix(in srgb, var(--color-accent) 12%, transparent);
 }
 
 /* Optional light theme (rail theme toggle) */
@@ -824,7 +899,7 @@ html[data-theme="light"] .widget-shell:hover {
   border-color: #c5cad3;
 }
 html[data-theme="light"] .widget-shell:focus-within {
-  border-color: #b8bec8;
+  border-color: color-mix(in srgb, var(--color-accent) 45%, #b8bec8);
 }
 html[data-theme="light"] .terminal-workspace {
   background: linear-gradient(180deg, #f0f2f5 0%, #e8eaee 48px, #e8eaee 100%);
@@ -837,6 +912,49 @@ html[data-theme="light"] .side-drawer-scrim {
   background: rgba(15, 23, 42, 0.25);
 }
 
+
+html[data-theme="light"] .rail-btn:hover {
+  color: #1a1d23;
+  background: rgba(0, 0, 0, 0.04);
+}
+html[data-theme="light"] .rail-btn[data-active='true'] {
+  color: #b8860b;
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+html[data-theme="light"] .layout-tab:hover {
+  color: #3f4654;
+  background: rgba(0, 0, 0, 0.03);
+}
+html[data-theme="light"] .layout-tab[data-active='true'] {
+  color: #1a1d23;
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+html[data-theme="light"] .watch-chip:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+html[data-theme="light"] .watch-chip[data-active='true'] {
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+html[data-theme="light"] .watch-chip[data-active='true'] .watch-chip-symbol {
+  color: #1a1d23;
+}
+html[data-theme="light"] .tab-dock-tab {
+  color: #7a8290;
+}
+html[data-theme="light"] .tab-dock-tab:hover {
+  color: #3f4654;
+  background: rgba(0, 0, 0, 0.03);
+}
+html[data-theme="light"] .tab-dock-tab[data-active='true'] {
+  color: #1a1d23;
+}
+html[data-theme="light"] .widget-shell:focus-within {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-terminal-border));
+  box-shadow: var(--shadow-panel), 0 0 0 1px color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+html[data-theme="light"] .grid-chart-maximized .is-chart-widget .widget-shell {
+  border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-terminal-border));
+}
 
 /* Heatmap craft range — dense gold accent (#f0b90b) */
 .hm-craft-range {
@@ -861,9 +979,9 @@ html[data-theme="light"] .side-drawer-scrim {
   width: 11px;
   height: 11px;
   border-radius: 2px;
-  background: #f0b90b;
+  background: var(--color-accent);
   border: 1px solid rgba(0, 0, 0, 0.45);
-  box-shadow: 0 0 0 1px rgba(240, 185, 11, 0.25);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 25%, transparent);
 }
 .hm-craft-range::-moz-range-track {
   height: 3px;
@@ -874,6 +992,6 @@ html[data-theme="light"] .side-drawer-scrim {
   width: 11px;
   height: 11px;
   border-radius: 2px;
-  background: #f0b90b;
+  background: var(--color-accent);
   border: 1px solid rgba(0, 0, 0, 0.45);
 }
