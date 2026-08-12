@@ -491,7 +491,17 @@ export class BinanceFeed {
       this.onAggTrade(data as unknown as AggTradeMsg);
       return;
     }
-    if (stream.includes('@depth') || event === 'depthUpdate' || data.bids || data.b) {
+    // bookTicker must be checked before depth: its best bid/ask fields are also named b/a
+    // (strings), and a truthy data.b would incorrectly route into onDepth.
+    if (stream.includes('@bookTicker') || event === 'bookTicker') {
+      this.onBookTicker(data as { b?: string; a?: string; B?: string; A?: string });
+      return;
+    }
+    const bids = data.bids;
+    const b = data.b;
+    const isDepthLevels =
+      Array.isArray(bids) || Array.isArray(b);
+    if (stream.includes('@depth') || event === 'depthUpdate' || isDepthLevels) {
       this.onDepth(data as unknown as DepthMsg);
       return;
     }
@@ -501,10 +511,6 @@ export class BinanceFeed {
     }
     if (stream.includes('@markPrice') || event === 'markPriceUpdate') {
       this.onMarkPrice(data as unknown as MarkPriceMsg);
-      return;
-    }
-    if (stream.includes('@bookTicker') || event === 'bookTicker') {
-      this.onBookTicker(data as { b?: string; a?: string; B?: string; A?: string });
       return;
     }
     if (stream.includes('forceOrder') || event === 'forceOrder') {
@@ -543,8 +549,9 @@ export class BinanceFeed {
   }
 
   private onDepth(msg: DepthMsg) {
-    const rawBids = msg.bids ?? msg.b ?? [];
-    const rawAsks = msg.asks ?? msg.a ?? [];
+    const rawBids = Array.isArray(msg.bids) ? msg.bids : Array.isArray(msg.b) ? msg.b : [];
+    const rawAsks = Array.isArray(msg.asks) ? msg.asks : Array.isArray(msg.a) ? msg.a : [];
+    if (!rawBids.length && !rawAsks.length) return;
     const bids = [];
     const asks = [];
     let bidTotal = 0;
