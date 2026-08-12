@@ -1,5 +1,7 @@
 import { create } from 'zustand';
-import { mockFeed, type FeedSnapshot } from '../data/mockFeed';
+import { mockFeed } from '../data/mockFeed';
+import { binanceFeed } from '../data/binanceFeed';
+import type { FeedMode, FeedSnapshot } from '../data/feedTypes';
 import type {
   ExchangeId,
   FeedStatus,
@@ -12,6 +14,7 @@ import type {
 
 const LAYOUT_KEY = 'flow-terminal-layout-v2';
 const WIDGETS_KEY = 'flow-terminal-widgets-v2';
+const FEED_MODE_KEY = 'flow-terminal-feed-mode';
 
 const DEFAULT_WIDGETS: WidgetInstance[] = [
   { id: 'chart', type: 'chart' },
@@ -45,11 +48,18 @@ function loadJson<T>(key: string, fallback: T): T {
   }
 }
 
+function loadFeedMode(): FeedMode {
+  const v = localStorage.getItem(FEED_MODE_KEY);
+  if (v === 'mock' || v === 'live') return v;
+  return 'live';
+}
+
 interface TerminalState {
   symbol: SymbolId;
   exchanges: ExchangeId[];
   speed: Speed;
   status: FeedStatus;
+  feedMode: FeedMode;
   feed: FeedSnapshot | null;
   widgets: WidgetInstance[];
   layout: LayoutItem[];
@@ -59,6 +69,7 @@ interface TerminalState {
   launcherOpen: boolean;
 
   initFeed: () => () => void;
+  setFeedMode: (mode: FeedMode) => void;
   setSymbol: (symbol: SymbolId) => void;
   toggleExchange: (ex: ExchangeId) => void;
   setSpeed: (speed: Speed) => void;
@@ -78,92 +89,166 @@ function persist(widgets: WidgetInstance[], layout: LayoutItem[]) {
   localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
 }
 
-export const useTerminalStore = create<TerminalState>((set, get) => ({
-  symbol: 'BTC/USD',
-  exchanges: ['Binance', 'Bybit', 'OKX'],
-  speed: 1,
-  status: 'paused',
-  feed: null,
-  widgets: loadJson(WIDGETS_KEY, DEFAULT_WIDGETS),
-  layout: loadJson(LAYOUT_KEY, DEFAULT_LAYOUT),
-  showVwap: true,
-  showCvdOverlay: false,
-  showLiqMarkers: true,
-  launcherOpen: false,
+function stopAll() {
+  mockFeed.stop();
+  binanceFeed.stop();
+}
 
-  initFeed: () => {
-    const unsub = mockFeed.subscribe((snap) => {
-      set({ feed: snap, status: mockFeed.getStatus() });
+export const useTerminalStore = create<TerminalState>((set, get) => {
+  let unsubData: (() => void) | null = null;
+  let unsubStatus: (() => void) | null = null;
+  let fallbackArmed = false;
+
+  const cleanupSubs = () => {
+    unsubData?.();
+    unsubStatus?.();
+    unsubData = null;
+    unsubStatus = null;
+  };
+
+  const attachMock = () => {
+    cleanupSubs();
+    stopAll();
+    mockFeed.setSymbol(get().symbol);
+    mockFeed.setExchanges(get().exchanges);
+    mockFeed.setSpeed(get().speed);
+    unsubData = mockFeed.subscribe((snap) => {
+      set({ feed: snap, status: mockFeed.getStatus(), feedMode: 'mock' });
     });
     mockFeed.start();
-    set({ status: 'live' });
-    return () => {
-      unsub();
-      mockFeed.stop();
-    };
-  },
+    set({ status: 'live', feedMode: 'mock' });
+  };
 
-  setSymbol: (symbol) => {
-    mockFeed.setSymbol(symbol);
-    set({ symbol });
-  },
+  const attachLive = () => {
+    cleanupSubs();
+    stopAll();
+    fallbackArmed = true;
+    binanceFeed.setSymbol(get().symbol);
+    binanceFeed.setFallbackHandler(() => {
+      if (!fallbackArmed) return;
+      if (get().feedMode !== 'live') return;
+      console.warn('[Flow] Live Binance feed failed — falling back to mock');
+      fallbackArmed = false;
+      localStorage.setItem(FEED_MODE_KEY, 'mock');
+      attachMock();
+    });
+    unsubStatus = binanceFeed.onStatus((status) => set({ status }));
+    unsubData = binanceFeed.subscribe((snap) => {
+      set({ feed: snap, status: binanceFeed.getStatus() });
+    });
+    binanceFeed.start();
+    set({ feedMode: 'live', status: 'connecting' });
+  };
 
-  toggleExchange: (ex) => {
-    const cur = get().exchanges;
-    const next = cur.includes(ex) ? cur.filter((e) => e !== ex) : [...cur, ex];
-    const exchanges = next.length ? next : cur;
-    mockFeed.setExchanges(exchanges);
-    set({ exchanges });
-  },
+  return {
+    symbol: 'BTC/USD',
+    exchanges: ['Binance', 'Bybit', 'OKX'],
+    speed: 1,
+    status: 'paused',
+    feedMode: loadFeedMode(),
+    feed: null,
+    widgets: loadJson(WIDGETS_KEY, DEFAULT_WIDGETS),
+    layout: loadJson(LAYOUT_KEY, DEFAULT_LAYOUT),
+    showVwap: true,
+    showCvdOverlay: false,
+    showLiqMarkers: true,
+    launcherOpen: false,
 
-  setSpeed: (speed) => {
-    mockFeed.setSpeed(speed);
-    set({ speed });
-  },
+    initFeed: () => {
+      const mode = get().feedMode;
+      if (mode === 'live') attachLive();
+      else attachMock();
+      return () => {
+        fallbackArmed = false;
+        binanceFeed.setFallbackHandler(null);
+        cleanupSubs();
+        stopAll();
+      };
+    },
 
-  toggleFeed: () => {
-    if (mockFeed.getStatus() === 'live') {
-      mockFeed.stop();
-      set({ status: 'paused' });
-    } else {
-      mockFeed.start();
-      set({ status: 'live' });
-    }
-  },
+    setFeedMode: (mode) => {
+      localStorage.setItem(FEED_MODE_KEY, mode);
+      set({ feedMode: mode });
+      if (mode === 'live') attachLive();
+      else {
+        fallbackArmed = false;
+        binanceFeed.setFallbackHandler(null);
+        attachMock();
+      }
+    },
 
-  setLayout: (layout) => {
-    set({ layout });
-    persist(get().widgets, layout);
-  },
+    setSymbol: (symbol) => {
+      set({ symbol });
+      if (get().feedMode === 'live') binanceFeed.setSymbol(symbol);
+      else mockFeed.setSymbol(symbol);
+    },
 
-  resetLayout: () => {
-    set({ widgets: DEFAULT_WIDGETS, layout: DEFAULT_LAYOUT });
-    persist(DEFAULT_WIDGETS, DEFAULT_LAYOUT);
-  },
+    toggleExchange: (ex) => {
+      const cur = get().exchanges;
+      const next = cur.includes(ex) ? cur.filter((e) => e !== ex) : [...cur, ex];
+      const exchanges = next.length ? next : cur;
+      mockFeed.setExchanges(exchanges);
+      set({ exchanges });
+    },
 
-  addWidget: (type) => {
-    const id = `${type}_${Date.now().toString(36)}`;
-    const widgets = [...get().widgets, { id, type }];
-    const layout = [
-      ...get().layout,
-      { i: id, x: 0, y: Infinity, w: 4, h: 6, minW: 2, minH: 3 },
-    ];
-    set({ widgets, layout, launcherOpen: false });
-    persist(widgets, layout);
-  },
+    setSpeed: (speed) => {
+      mockFeed.setSpeed(speed);
+      set({ speed });
+    },
 
-  removeWidget: (id) => {
-    const widgets = get().widgets.filter((w) => w.id !== id);
-    const layout = get().layout.filter((l) => l.i !== id);
-    set({ widgets, layout });
-    persist(widgets, layout);
-  },
+    toggleFeed: () => {
+      const { feedMode } = get();
+      if (feedMode === 'live') {
+        if (binanceFeed.getStatus() === 'live' || binanceFeed.getStatus() === 'connecting') {
+          binanceFeed.stop();
+          set({ status: 'paused' });
+        } else {
+          binanceFeed.start();
+          set({ status: 'connecting' });
+        }
+      } else if (mockFeed.getStatus() === 'live') {
+        mockFeed.stop();
+        set({ status: 'paused' });
+      } else {
+        mockFeed.start();
+        set({ status: 'live' });
+      }
+    },
 
-  setShowVwap: (showVwap) => set({ showVwap }),
-  setShowCvdOverlay: (showCvdOverlay) => set({ showCvdOverlay }),
-  setShowLiqMarkers: (showLiqMarkers) => set({ showLiqMarkers }),
-  setLauncherOpen: (launcherOpen) => set({ launcherOpen }),
-}));
+    setLayout: (layout) => {
+      set({ layout });
+      persist(get().widgets, layout);
+    },
+
+    resetLayout: () => {
+      set({ widgets: DEFAULT_WIDGETS, layout: DEFAULT_LAYOUT });
+      persist(DEFAULT_WIDGETS, DEFAULT_LAYOUT);
+    },
+
+    addWidget: (type) => {
+      const id = `${type}_${Date.now().toString(36)}`;
+      const widgets = [...get().widgets, { id, type }];
+      const layout = [
+        ...get().layout,
+        { i: id, x: 0, y: Infinity, w: 4, h: 6, minW: 2, minH: 3 },
+      ];
+      set({ widgets, layout, launcherOpen: false });
+      persist(widgets, layout);
+    },
+
+    removeWidget: (id) => {
+      const widgets = get().widgets.filter((w) => w.id !== id);
+      const layout = get().layout.filter((l) => l.i !== id);
+      set({ widgets, layout });
+      persist(widgets, layout);
+    },
+
+    setShowVwap: (showVwap) => set({ showVwap }),
+    setShowCvdOverlay: (showCvdOverlay) => set({ showCvdOverlay }),
+    setShowLiqMarkers: (showLiqMarkers) => set({ showLiqMarkers }),
+    setLauncherOpen: (launcherOpen) => set({ launcherOpen }),
+  };
+});
 
 export const WIDGET_META: Record<
   WidgetType,

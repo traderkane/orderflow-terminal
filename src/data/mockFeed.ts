@@ -5,12 +5,14 @@ import type {
   ExchangeId,
   HeatmapFrame,
   Liquidation,
-  MarketStats,
   OrderBook,
   SymbolId,
   Trade,
   VolumeProfileBin,
 } from '../types/market';
+import type { FeedListener, FeedSnapshot } from './feedTypes';
+
+export type { FeedListener, FeedSnapshot } from './feedTypes';
 
 const SYMBOL_BASE: Record<SymbolId, number> = {
   'BTC/USD': 67500,
@@ -30,22 +32,6 @@ function rng(seed: number) {
 function uid(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
-
-export interface FeedSnapshot {
-  symbol: SymbolId;
-  candles: Candle[];
-  trades: Trade[];
-  book: OrderBook;
-  cvd: CvdPoint[];
-  liquidations: Liquidation[];
-  heatmap: HeatmapFrame[];
-  volumeProfile: VolumeProfileBin[];
-  stats: MarketStats;
-  vwap: number;
-  vwapSeries: VwapPoint[];
-}
-
-export type FeedListener = (snap: FeedSnapshot) => void;
 
 export class MockFeed {
   private symbol: SymbolId = 'BTC/USD';

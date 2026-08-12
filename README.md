@@ -1,6 +1,11 @@
 # Flow Terminal (Orderflow)
 
-MMT-inspired browser crypto **order-flow trading terminal** with a dark multi-widget layout, driven by a local mock/replay feed (no API keys).
+MMT-inspired browser crypto **order-flow trading terminal** with a dark multi-widget layout.
+
+Data sources:
+
+- **Live (default)** — public Binance USDT-M futures WebSockets + REST bootstrap (no API keys)
+- **Mock** — local simulated feed for offline demo / fallback
 
 ## Quick start
 
@@ -37,27 +42,43 @@ npm run preview
 7. **Liquidations** — forced order feed
 8. **Stats** — last, change, funding, OI, spread, volume
 
+## Live Binance feed
+
+`src/data/binanceFeed.ts` connects to Binance **USDT-M futures**:
+
+| Stream / REST | Used for |
+| --- | --- |
+| `aggTrade` | Trades tape, CVD, volume profile |
+| `depth20@100ms` | Order book + heatmap history |
+| `kline_1m` | Chart candles |
+| `markPrice` | Funding rate |
+| `!forceOrder@arr` | Liquidations (filtered to symbol) |
+| REST klines / 24hr ticker / OI | Bootstrap history + stats |
+
+Symbols: **BTC/USD** → `btcusdt`, **ETH/USD** → `ethusdt`.
+
+Toggle **Live / Mock** in the top bar. Live is the default; if the live connection cannot bootstrap, the app falls back to mock.
+
+Resilience notes:
+
+- REST prefers `fapi.binance.com`, then falls back to `data-api.binance.vision` (spot) when futures REST is geo-blocked.
+- Futures WS is primary. If `aggTrade` / `kline` never arrive (some networks filter them), the feed opens a spot Vision WS for tape + candles while keeping futures depth / liquidations / bookTicker.
+
+
 ## Mock feed
 
 `src/data/mockFeed.ts` generates a random-walk mid, trades, book, candles, CVD, heatmap frames, and occasional liquidations.
 
 - Start / pause from the top bar
-- Speed **1x / 2x**
-- Symbol switch: **BTC/USD**, **ETH/USD**
-- Venue multi-select: Binance / Bybit / OKX (tags trades & liqs)
-
-Widgets subscribe through the Zustand store and update live.
+- Speed **1x / 2x** (mock only)
+- Venue multi-select: Binance / Bybit / OKX (mock tags)
 
 ## Layout
 
 - Drag widgets from the header handle; resize from corners
 - Layout + widget set persist in `localStorage`
-- **Reset layout** restores the chart-dominant pro workspace (book + tape right, heatmap/CVD/profile/liqs under chart, stats strip)
+- **Reset layout** restores the chart-dominant pro workspace
 - **+ Widget** launcher adds another panel instance
-
-## Roadmap note
-
-This build is intentionally self-contained with mock data. A real exchange or MMT-style API layer can replace `mockFeed` later without rewriting the widgets.
 
 ## License
 
