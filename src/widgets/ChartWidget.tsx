@@ -12,17 +12,58 @@ import {
   type Time,
 } from 'lightweight-charts';
 import { useTerminalStore } from '../store/useTerminalStore';
-import type { HeatmapFrame } from '../types/market';
+import type { Candle, HeatmapFrame, Trade, VolumeProfileBin } from '../types/market';
 
 const UP = '#0ecb81';
 const DOWN = '#f6465d';
 const PANEL = '#0a0c10';
 const GRID = '#12161e';
 const TEXT = '#6b7280';
+const ACCENT = '#f0b90b';
 
 function frameTimeSec(t: number): number {
   // Live heatmap uses ms; mock uses unix seconds.
   return t > 1e12 ? t / 1000 : t;
+}
+
+function tradeTimeSec(t: number): number {
+  return t > 1e12 ? t / 1000 : t;
+}
+
+/** Fallback VPVR from recent trades, else candles. */
+function buildFallbackProfile(
+  trades: Trade[],
+  candles: Candle[],
+): VolumeProfileBin[] {
+  const bins = new Map<number, VolumeProfileBin>();
+  const bump = (price: number, buy: number, sell: number) => {
+    const step =
+      price >= 1000 ? 5 : price >= 100 ? 0.5 : price >= 10 ? 0.05 : 0.001;
+    const key = Math.round(price / step) * step;
+    const prev = bins.get(key) ?? { price: key, buyVolume: 0, sellVolume: 0, total: 0 };
+    prev.buyVolume += buy;
+    prev.sellVolume += sell;
+    prev.total += buy + sell;
+    bins.set(key, prev);
+  };
+
+  if (trades.length) {
+    for (const t of trades) {
+      if (t.side === 'buy') bump(t.price, t.size, 0);
+      else bump(t.price, 0, t.size);
+    }
+  } else {
+    for (const c of candles.slice(-80)) {
+      const mid = (c.high + c.low + c.close) / 3;
+      const buy = c.close >= c.open ? c.volume * 0.55 : c.volume * 0.45;
+      const sell = c.volume - buy;
+      bump(mid, buy, sell);
+      bump(c.high, buy * 0.15, sell * 0.15);
+      bump(c.low, buy * 0.15, sell * 0.15);
+    }
+  }
+
+  return [...bins.values()].sort((a, b) => a.price - b.price).slice(-80);
 }
 
 export function ChartWidget() {
@@ -36,18 +77,297 @@ export function ChartWidget() {
   const markersRef = useRef<{ setMarkers: (m: SeriesMarker<Time>[]) => void } | null>(null);
   const rafRef = useRef<number>(0);
   const heatmapRef = useRef<HeatmapFrame[]>([]);
+  const profileRef = useRef<VolumeProfileBin[]>([]);
+  const tradesRef = useRef<Trade[]>([]);
+  const flagsRef = useRef({
+    heatmap: true,
+    profile: true,
+    bubbles: true,
+  });
 
   const feed = useTerminalStore((s) => s.feed);
   const showVwap = useTerminalStore((s) => s.showVwap);
   const showCvdOverlay = useTerminalStore((s) => s.showCvdOverlay);
   const showLiqMarkers = useTerminalStore((s) => s.showLiqMarkers);
   const showHeatmap = useTerminalStore((s) => s.showHeatmap);
+  const showProfile = useTerminalStore((s) => s.showProfile);
+  const showBubbles = useTerminalStore((s) => s.showBubbles);
   const setShowVwap = useTerminalStore((s) => s.setShowVwap);
   const setShowCvdOverlay = useTerminalStore((s) => s.setShowCvdOverlay);
   const setShowLiqMarkers = useTerminalStore((s) => s.setShowLiqMarkers);
   const setShowHeatmap = useTerminalStore((s) => s.setShowHeatmap);
+  const setShowProfile = useTerminalStore((s) => s.setShowProfile);
+  const setShowBubbles = useTerminalStore((s) => s.setShowBubbles);
 
-  const drawHeatmap = () => {
+  flagsRef.current = {
+    heatmap: showHeatmap,
+    profile: showProfile,
+    bubbles: showBubbles,
+  };
+
+  const drawHeatmapLayer = (
+    ctx: CanvasRenderingContext2D,
+    chart: IChartApi,
+    series: ISeriesApi<'Candlestick'>,
+    w: number,
+  ) => {
+    const frames = heatmapRef.current;
+    if (!frames.length) return;
+
+    const recent = frames.slice(-120);
+    const timeScale = chart.timeScale();
+
+    const xMapped: Array<number | null> = recent.map((f) =>
+      timeScale.timeToCoordinate(Math.floor(frameTimeSec(f.time)) as Time),
+    );
+    const validXs = xMapped.filter((x): x is number => x != null && Number.isFinite(x));
+    let useStretch = validXs.length < 2;
+    let x0 = 0;
+    let x1 = w;
+    if (!useStretch) {
+      x0 = Math.min(...validXs);
+      x1 = Math.max(...validXs);
+      if (x1 - x0 < w * 0.22) useStretch = true;
+    }
+
+    let peak = 0;
+    for (const frame of recent) {
+      const n = frame.prices.length;
+      for (let y = 0; y < n; y++) {
+        peak = Math.max(peak, frame.bids[y] ?? 0, frame.asks[y] ?? 0);
+      }
+    }
+    const invPeak = peak > 0 ? 1 / peak : 1;
+
+    const stretchLeft = w * 0.28;
+    const stretchRight = w - 8;
+    const stretchSpan = Math.max(1, stretchRight - stretchLeft);
+
+    for (let i = 0; i < recent.length; i++) {
+      const frame = recent[i];
+      let xLeft: number;
+      let xRight: number;
+
+      if (useStretch) {
+        xLeft = stretchLeft + (i / recent.length) * stretchSpan;
+        xRight = stretchLeft + ((i + 1) / recent.length) * stretchSpan;
+      } else {
+        const x = xMapped[i];
+        if (x == null || !Number.isFinite(x)) continue;
+        const prev = i > 0 ? xMapped[i - 1] : null;
+        const next = i + 1 < xMapped.length ? xMapped[i + 1] : null;
+        const leftGap =
+          prev != null && Number.isFinite(prev)
+            ? (x - prev) / 2
+            : Math.max(2, (x1 - x0) / recent.length / 2);
+        const rightGap =
+          next != null && Number.isFinite(next)
+            ? (next - x) / 2
+            : Math.max(2, (x1 - x0) / recent.length / 2);
+        xLeft = x - leftGap;
+        xRight = x + rightGap;
+      }
+
+      const cellW = Math.max(1, xRight - xLeft);
+      const levels = frame.prices.length;
+      if (levels < 2) continue;
+
+      for (let y = 0; y < levels; y++) {
+        const bid = frame.bids[y] ?? 0;
+        const ask = frame.asks[y] ?? 0;
+        const raw = Math.max(bid, ask) * invPeak;
+        if (raw < 0.03) continue;
+        const intensity = Math.min(1, Math.pow(raw, 0.55));
+        const price = frame.prices[y];
+        const yCoord = series.priceToCoordinate(price);
+        if (yCoord == null || !Number.isFinite(yCoord)) continue;
+
+        let yTop: number;
+        let yBot: number;
+        if (y + 1 < levels) {
+          const yNext = series.priceToCoordinate(frame.prices[y + 1]);
+          if (yNext == null) continue;
+          yTop = Math.min(yCoord, yNext);
+          yBot = Math.max(yCoord, yNext);
+        } else if (y > 0) {
+          const yPrev = series.priceToCoordinate(frame.prices[y - 1]);
+          if (yPrev == null) continue;
+          const half = Math.abs(yCoord - yPrev);
+          yTop = yCoord - half / 2;
+          yBot = yCoord + half / 2;
+        } else {
+          continue;
+        }
+
+        const cellH = Math.max(1, yBot - yTop);
+        const isBid = bid >= ask;
+        const alpha = 0.08 + intensity * 0.42;
+        ctx.fillStyle = isBid
+          ? `rgba(14, 203, 129, ${alpha})`
+          : `rgba(246, 70, 93, ${alpha})`;
+        ctx.fillRect(
+          Math.floor(xLeft),
+          Math.floor(yTop),
+          Math.ceil(cellW) + 1,
+          Math.ceil(cellH) + 1,
+        );
+      }
+    }
+  };
+
+  const drawProfileLayer = (
+    ctx: CanvasRenderingContext2D,
+    chart: IChartApi,
+    series: ISeriesApi<'Candlestick'>,
+    paneH: number,
+  ) => {
+    const profile = profileRef.current;
+    if (!profile.length) return;
+
+    const plotW = chart.timeScale().width();
+    if (plotW <= 0) return;
+
+    let maxVol = 0;
+    let pocPrice = profile[0].price;
+    for (const bin of profile) {
+      if (bin.total > maxVol) {
+        maxVol = bin.total;
+        pocPrice = bin.price;
+      }
+    }
+    if (maxVol <= 0) return;
+
+    const maxBarW = Math.max(36, plotW * 0.18);
+    const right = plotW - 2;
+
+    // Soft backdrop so bars stay readable over candles/heatmap.
+    ctx.fillStyle = 'rgba(5, 6, 8, 0.28)';
+    ctx.fillRect(right - maxBarW - 4, 0, maxBarW + 6, paneH);
+
+    for (let i = 0; i < profile.length; i++) {
+      const bin = profile[i];
+      const y = series.priceToCoordinate(bin.price);
+      if (y == null || !Number.isFinite(y)) continue;
+
+      let h: number;
+      if (i + 1 < profile.length) {
+        const yNext = series.priceToCoordinate(profile[i + 1].price);
+        h =
+          yNext != null && Number.isFinite(yNext)
+            ? Math.max(1.5, Math.abs(yNext - y))
+            : 3;
+      } else if (i > 0) {
+        const yPrev = series.priceToCoordinate(profile[i - 1].price);
+        h =
+          yPrev != null && Number.isFinite(yPrev)
+            ? Math.max(1.5, Math.abs(y - yPrev))
+            : 3;
+      } else {
+        h = 3;
+      }
+
+      const barW = (bin.total / maxVol) * maxBarW;
+      const buyShare = bin.total ? bin.buyVolume / bin.total : 0.5;
+      const buyW = barW * buyShare;
+      const sellW = barW - buyW;
+      const x0 = right - barW;
+      const yTop = y - h / 2;
+      const isPoc = bin.price === pocPrice;
+
+      if (buyW > 0.5) {
+        ctx.fillStyle = isPoc ? 'rgba(14, 203, 129, 0.72)' : 'rgba(14, 203, 129, 0.42)';
+        ctx.fillRect(x0, yTop, buyW, h);
+      }
+      if (sellW > 0.5) {
+        ctx.fillStyle = isPoc ? 'rgba(246, 70, 93, 0.72)' : 'rgba(246, 70, 93, 0.42)';
+        ctx.fillRect(x0 + buyW, yTop, sellW, h);
+      }
+    }
+
+    const pocY = series.priceToCoordinate(pocPrice);
+    if (pocY != null && Number.isFinite(pocY)) {
+      ctx.save();
+      ctx.strokeStyle = ACCENT;
+      ctx.globalAlpha = 0.85;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(Math.max(0, right - maxBarW - 8), pocY);
+      ctx.lineTo(right, pocY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = '600 9px IBM Plex Mono, JetBrains Mono, monospace';
+      ctx.fillStyle = ACCENT;
+      ctx.globalAlpha = 0.95;
+      const label = `POC ${pocPrice.toFixed(pocPrice >= 100 ? 1 : 2)}`;
+      const tw = ctx.measureText(label).width;
+      ctx.fillText(label, Math.max(4, right - tw - 6), pocY - 4);
+      ctx.restore();
+    }
+  };
+
+  const drawBubblesLayer = (
+    ctx: CanvasRenderingContext2D,
+    chart: IChartApi,
+    series: ISeriesApi<'Candlestick'>,
+  ) => {
+    const trades = tradesRef.current;
+    if (!trades.length) return;
+
+    const sizes = trades.map((t) => t.size).sort((a, b) => a - b);
+    const p75 = sizes[Math.floor(sizes.length * 0.75)] ?? 1;
+    const floor = Math.max(0.35, p75 * 0.85);
+    const large = trades.filter((t) => t.size >= floor).slice(0, 60);
+    if (!large.length) return;
+
+    const timeScale = chart.timeScale();
+    const maxSize = Math.max(...large.map((t) => t.size), floor);
+    const nowSec = tradeTimeSec(trades[0]?.time ?? Date.now());
+
+    // Oldest first so newer bubbles paint on top.
+    const ordered = [...large].sort((a, b) => a.time - b.time);
+
+    for (const t of ordered) {
+      const tSec = tradeTimeSec(t.time);
+      const xBase = timeScale.timeToCoordinate(Math.floor(tSec) as Time);
+      if (xBase == null || !Number.isFinite(xBase)) continue;
+      // Mild intra-minute offset so stacked prints don't fully overlap.
+      const frac = tSec - Math.floor(tSec / 60) * 60;
+      const x = (xBase as number) + Math.min(10, (frac / 60) * 12);
+
+      const y = series.priceToCoordinate(t.price);
+      if (y == null || !Number.isFinite(y)) continue;
+
+      const norm = Math.sqrt(t.size / maxSize);
+      const r = 2.5 + norm * 11;
+      const ageSec = Math.max(0, nowSec - tSec);
+      const fade = Math.max(0.25, 1 - ageSec / 180);
+      const isBuy = t.side === 'buy';
+      const fill = isBuy
+        ? `rgba(14, 203, 129, ${0.18 + fade * 0.35})`
+        : `rgba(246, 70, 93, ${0.18 + fade * 0.35})`;
+      const stroke = isBuy
+        ? `rgba(14, 203, 129, ${0.45 + fade * 0.45})`
+        : `rgba(246, 70, 93, ${0.45 + fade * 0.45})`;
+
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.lineWidth = t.size >= maxSize * 0.6 ? 1.5 : 1;
+      ctx.strokeStyle = stroke;
+      ctx.stroke();
+
+      if (t.size >= maxSize * 0.55) {
+        ctx.font = '600 8px IBM Plex Mono, JetBrains Mono, monospace';
+        ctx.fillStyle = isBuy ? 'rgba(14,203,129,0.9)' : 'rgba(246,70,93,0.9)';
+        const label = t.size >= 10 ? t.size.toFixed(1) : t.size.toFixed(2);
+        ctx.fillText(label, x + r + 2, y + 3);
+      }
+    }
+  };
+
+  const drawOverlays = () => {
     const canvas = overlayRef.current;
     const chart = chartRef.current;
     const series = candleRef.current;
@@ -71,117 +391,17 @@ export function ChartWidget() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
-    if (!showHeatmap) return;
-    const frames = heatmapRef.current;
-    if (!frames.length) return;
-
-    const recent = frames.slice(-120);
-    const timeScale = chart.timeScale();
-
-    // Prefer true time alignment; if frames collapse into a thin strip
-    // (sub-candle sampling), stretch them across the right plot area.
-    const xMapped: Array<number | null> = recent.map((f) =>
-      timeScale.timeToCoordinate(Math.floor(frameTimeSec(f.time)) as Time),
-    );
-    const validXs = xMapped.filter((x): x is number => x != null && Number.isFinite(x));
-    let useStretch = validXs.length < 2;
-    let x0 = 0;
-    let x1 = w;
-    if (!useStretch) {
-      x0 = Math.min(...validXs);
-      x1 = Math.max(...validXs);
-      if (x1 - x0 < w * 0.22) useStretch = true;
-    }
-
-    let peak = 0;
-    for (const frame of recent) {
-      const n = frame.prices.length;
-      for (let y = 0; y < n; y++) {
-        peak = Math.max(peak, frame.bids[y] ?? 0, frame.asks[y] ?? 0);
-      }
-    }
-    const invPeak = peak > 0 ? 1 / peak : 1;
-
-    // Right-side stretch window: leave room for older candles on the left.
-    const stretchLeft = w * 0.28;
-    const stretchRight = w - 8;
-    const stretchSpan = Math.max(1, stretchRight - stretchLeft);
-
-    for (let i = 0; i < recent.length; i++) {
-      const frame = recent[i];
-      let xLeft: number;
-      let xRight: number;
-
-      if (useStretch) {
-        xLeft = stretchLeft + (i / recent.length) * stretchSpan;
-        xRight = stretchLeft + ((i + 1) / recent.length) * stretchSpan;
-      } else {
-        const x = xMapped[i];
-        if (x == null || !Number.isFinite(x)) continue;
-        const prev = i > 0 ? xMapped[i - 1] : null;
-        const next = i + 1 < xMapped.length ? xMapped[i + 1] : null;
-        const leftGap =
-          prev != null && Number.isFinite(prev) ? (x - prev) / 2 : Math.max(2, (x1 - x0) / recent.length / 2);
-        const rightGap =
-          next != null && Number.isFinite(next) ? (next - x) / 2 : Math.max(2, (x1 - x0) / recent.length / 2);
-        xLeft = x - leftGap;
-        xRight = x + rightGap;
-      }
-
-      const cellW = Math.max(1, xRight - xLeft);
-      const levels = frame.prices.length;
-      if (levels < 2) continue;
-
-      for (let y = 0; y < levels; y++) {
-        const bid = frame.bids[y] ?? 0;
-        const ask = frame.asks[y] ?? 0;
-        const raw = Math.max(bid, ask) * invPeak;
-        if (raw < 0.03) continue;
-        const intensity = Math.min(1, Math.pow(raw, 0.55));
-        const price = frame.prices[y];
-        const yCoord = series.priceToCoordinate(price);
-        if (yCoord == null || !Number.isFinite(yCoord)) continue;
-
-        // Approximate cell height from neighboring buckets.
-        let yTop: number;
-        let yBot: number;
-        if (y + 1 < levels) {
-          const yNext = series.priceToCoordinate(frame.prices[y + 1]);
-          if (yNext == null) continue;
-          yTop = Math.min(yCoord, yNext);
-          yBot = Math.max(yCoord, yNext);
-        } else if (y > 0) {
-          const yPrev = series.priceToCoordinate(frame.prices[y - 1]);
-          if (yPrev == null) continue;
-          const half = Math.abs(yCoord - yPrev);
-          yTop = yCoord - half / 2;
-          yBot = yCoord + half / 2;
-        } else {
-          continue;
-        }
-
-        const cellH = Math.max(1, yBot - yTop);
-        const isBid = bid >= ask;
-        // Keep candles readable — soft overlay.
-        const alpha = 0.08 + intensity * 0.42;
-        ctx.fillStyle = isBid
-          ? `rgba(14, 203, 129, ${alpha})`
-          : `rgba(246, 70, 93, ${alpha})`;
-        ctx.fillRect(
-          Math.floor(xLeft),
-          Math.floor(yTop),
-          Math.ceil(cellW) + 1,
-          Math.ceil(cellH) + 1,
-        );
-      }
-    }
+    const flags = flagsRef.current;
+    if (flags.heatmap) drawHeatmapLayer(ctx, chart, series, w);
+    if (flags.bubbles) drawBubblesLayer(ctx, chart, series);
+    if (flags.profile) drawProfileLayer(ctx, chart, series, h);
   };
 
-  const scheduleHeatmap = () => {
+  const scheduleOverlays = () => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = 0;
-      drawHeatmap();
+      drawOverlays();
     });
   };
 
@@ -272,7 +492,7 @@ export function ChartWidget() {
     vwapRef.current = vwap;
     cvdRef.current = cvd;
 
-    const onRange = () => scheduleHeatmap();
+    const onRange = () => scheduleOverlays();
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
     chart.timeScale().subscribeVisibleTimeRangeChange(onRange);
 
@@ -282,7 +502,7 @@ export function ChartWidget() {
         width: containerRef.current.clientWidth,
         height: containerRef.current.clientHeight,
       });
-      scheduleHeatmap();
+      scheduleOverlays();
     });
     ro.observe(containerRef.current);
 
@@ -361,19 +581,26 @@ export function ChartWidget() {
     }
 
     heatmapRef.current = feed.heatmap ?? [];
-    scheduleHeatmap();
+    tradesRef.current = feed.trades ?? [];
+    profileRef.current =
+      feed.volumeProfile?.length > 0
+        ? feed.volumeProfile
+        : buildFallbackProfile(feed.trades ?? [], feed.candles ?? []);
+    scheduleOverlays();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feed, showVwap, showCvdOverlay, showLiqMarkers]);
 
   useEffect(() => {
-    scheduleHeatmap();
+    scheduleOverlays();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showHeatmap]);
+  }, [showHeatmap, showProfile, showBubbles]);
 
   return (
     <div className="relative flex h-full flex-col">
       <div className="absolute left-1.5 top-1.5 z-10 flex overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
         <Toggle label="Heatmap" on={showHeatmap} onClick={() => setShowHeatmap(!showHeatmap)} />
+        <Toggle label="Profile" on={showProfile} onClick={() => setShowProfile(!showProfile)} />
+        <Toggle label="Bubbles" on={showBubbles} onClick={() => setShowBubbles(!showBubbles)} />
         <Toggle label="VWAP" on={showVwap} onClick={() => setShowVwap(!showVwap)} />
         <Toggle label="CVD" on={showCvdOverlay} onClick={() => setShowCvdOverlay(!showCvdOverlay)} />
         <Toggle label="Liqs" on={showLiqMarkers} onClick={() => setShowLiqMarkers(!showLiqMarkers)} />

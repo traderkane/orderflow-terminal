@@ -33,7 +33,7 @@ npm run preview
 
 ## Widgets
 
-1. **Chart** — candles + volume; toggles for VWAP, CVD overlay, liquidation markers
+1. **Chart** — candles + volume; toggles for Heatmap, VPVR Profile, trade Bubbles, VWAP, CVD, liquidation markers
 2. **Order Book / DOM** — bids/asks, depth bars, spread
 3. **Trades Tape** — scrolling aggressor buys/sells with size highlighting
 4. **Order Book Heatmap** — canvas time × price liquidity

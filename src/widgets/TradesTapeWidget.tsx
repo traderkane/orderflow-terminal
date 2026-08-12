@@ -19,10 +19,11 @@ export function TradesTapeWidget() {
         {trades.map((t) => {
           const big = t.size >= 2;
           const huge = t.size >= 8;
+          const bubble = Math.min(8, 2 + Math.sqrt(t.size) * 1.4);
           return (
             <div
               key={t.id}
-              className={`grid grid-cols-[1fr_1.1fr_0.9fr_auto] px-1.5 py-[1px] ${
+              className={`grid grid-cols-[1fr_1.1fr_0.9fr_auto] items-center px-1.5 py-[1px] ${
                 huge
                   ? 'bg-accent/10'
                   : big
@@ -32,7 +33,30 @@ export function TradesTapeWidget() {
                     : ''
               }`}
             >
-              <span className="tabular-nums text-zinc-600">{fmtTime(t.time)}</span>
+              <span className="flex items-center gap-1 tabular-nums text-zinc-600">
+                {(big || huge) && (
+                  <span
+                    className="inline-block shrink-0 rounded-full"
+                    style={{
+                      width: bubble,
+                      height: bubble,
+                      background:
+                        t.side === 'buy'
+                          ? 'rgba(14,203,129,0.75)'
+                          : 'rgba(246,70,93,0.75)',
+                      boxShadow: huge
+                        ? `0 0 6px ${
+                            t.side === 'buy'
+                              ? 'rgba(14,203,129,0.55)'
+                              : 'rgba(246,70,93,0.55)'
+                          }`
+                        : undefined,
+                    }}
+                    aria-hidden
+                  />
+                )}
+                {fmtTime(t.time)}
+              </span>
               <span
                 className={`text-right tabular-nums ${
                   t.side === 'buy' ? 'text-up' : 'text-down'
