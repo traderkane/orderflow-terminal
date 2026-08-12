@@ -42,17 +42,17 @@ export function SideDrawer({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`side-drawer-panel absolute inset-y-0 right-0 flex w-full max-w-[20rem] flex-col border-l border-terminal-border bg-[#06080c] shadow-[-12px_0_32px_rgba(0,0,0,0.45)] ${
+        className={`side-drawer-panel absolute inset-y-0 right-0 flex w-full max-w-[20rem] flex-col border-l border-terminal-border bg-terminal-chrome shadow-[-12px_0_32px_rgba(0,0,0,0.45)] ${
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        <header className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-terminal-border px-2.5">
-          <div className="min-w-0">
-            <div className="truncate font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-200">
+        <header className="flex min-h-8 shrink-0 items-center justify-between gap-2 border-b border-terminal-border px-2.5 py-1.5">
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-mono text-[10px] font-medium uppercase tracking-[0.14em]">
               {title}
             </div>
             {subtitle && (
-              <div className="truncate font-mono text-[9px] leading-none text-terminal-label">
+              <div className="mt-0.5 truncate font-mono text-[9px] leading-tight text-terminal-label">
                 {subtitle}
               </div>
             )}
@@ -77,7 +77,7 @@ export const drawerSectionLabel =
   'px-2.5 pt-2.5 pb-1 font-mono text-[9px] font-medium uppercase tracking-[0.14em] text-terminal-label';
 
 export const drawerField =
-  'h-6 min-w-0 rounded-[2px] border border-terminal-border bg-[#080a0e] px-1.5 font-mono text-[10px] text-zinc-200 outline-none placeholder:text-terminal-label focus:border-terminal-border-strong';
+  'h-6 min-w-0 rounded-[2px] border border-terminal-border bg-terminal-header px-1.5 font-mono text-[10px] outline-none placeholder:text-terminal-label focus:border-terminal-border-strong';
 
 export const drawerGhostBtn =
   'h-6 shrink-0 rounded-[2px] px-1.5 font-mono text-[9px] font-medium uppercase tracking-[0.12em] text-terminal-muted transition-colors hover:bg-white/[0.04] hover:text-zinc-200 disabled:opacity-35';

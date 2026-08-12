@@ -16,6 +16,7 @@ export default function App() {
   const setLauncherOpen = useTerminalStore((s) => s.setLauncherOpen);
   const setOpenPanel = useTerminalStore((s) => s.setOpenPanel);
   const setCommandPaletteOpen = useTerminalStore((s) => s.setCommandPaletteOpen);
+  const setChartMaximized = useTerminalStore((s) => s.setChartMaximized);
 
   useEffect(() => initFeed(), [initFeed]);
 
@@ -26,21 +27,29 @@ export default function App() {
         setCommandPaletteOpen(!useTerminalStore.getState().commandPaletteOpen);
         return;
       }
-      if (e.key === 'Escape') {
-        if (useTerminalStore.getState().commandPaletteOpen) {
-          setCommandPaletteOpen(false);
-          return;
-        }
-        setLauncherOpen(false);
-        setOpenPanel(null);
+      if (e.key !== 'Escape') return;
+
+      // Chart drawing tools/selection clear first (ChartWidget capture handler).
+      // Then: palette → unmaximize → drawers/launcher.
+      const state = useTerminalStore.getState();
+      if (state.commandPaletteOpen) {
+        setCommandPaletteOpen(false);
+        return;
       }
+      if (state.chartMaximized) {
+        e.preventDefault();
+        setChartMaximized(false);
+        return;
+      }
+      setLauncherOpen(false);
+      setOpenPanel(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setLauncherOpen, setOpenPanel, setCommandPaletteOpen]);
+  }, [setLauncherOpen, setOpenPanel, setCommandPaletteOpen, setChartMaximized]);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-terminal-bg text-zinc-200">
+    <div className="flex h-screen w-screen overflow-hidden bg-terminal-bg text-[color:inherit]">
       <AppRail />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar />

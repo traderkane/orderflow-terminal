@@ -5,6 +5,8 @@
   --color-terminal-bg: #050608;
   --color-terminal-panel: #0a0c10;
   --color-terminal-elevated: #0e1116;
+  --color-terminal-chrome: #07090d;
+  --color-terminal-header: #080a0e;
   --color-terminal-border: #151922;
   --color-terminal-border-strong: #222833;
   --color-terminal-muted: #6b7280;
@@ -97,6 +99,16 @@ select {
   min-height: 100%;
 }
 
+.topbar,
+.app-rail,
+.layout-tabs,
+.watchlist-strip,
+.side-drawer-panel {
+  background-color: var(--color-terminal-chrome);
+}
+.drag-handle {
+  background-color: var(--color-terminal-header);
+}
 .layout-tabs,
 .watchlist-strip {
   scrollbar-width: thin;
@@ -168,6 +180,7 @@ select {
 }
 .tab-dock-shell .drag-handle {
   gap: 4px;
+  height: 1.75rem; /* h-7 — room for underline vs grip/close */
 }
 .tab-dock-body {
   height: 100%;
@@ -713,6 +726,8 @@ html[data-theme="light"] {
   --color-terminal-bg: #e8eaee;
   --color-terminal-panel: #f4f5f7;
   --color-terminal-elevated: #ffffff;
+  --color-terminal-chrome: #f0f2f5;
+  --color-terminal-header: #eef0f4;
   --color-terminal-border: #d0d4dc;
   --color-terminal-border-strong: #b8bec8;
   --color-terminal-muted: #6b7280;
@@ -720,8 +735,19 @@ html[data-theme="light"] {
 }
 html[data-theme="light"] .app-rail,
 html[data-theme="light"] .topbar,
-html[data-theme="light"] .layout-tabs {
-  background: #f0f2f5 !important;
+html[data-theme="light"] .layout-tabs,
+html[data-theme="light"] .watchlist-strip,
+html[data-theme="light"] .side-drawer-panel {
+  background: var(--color-terminal-chrome) !important;
+}
+html[data-theme="light"] .drag-handle {
+  background: var(--color-terminal-header) !important;
+}
+html[data-theme="light"] .widget-shell:hover {
+  border-color: #c5cad3;
+}
+html[data-theme="light"] .widget-shell:focus-within {
+  border-color: #b8bec8;
 }
 html[data-theme="light"] .terminal-workspace {
   background: linear-gradient(180deg, #f0f2f5 0%, #e8eaee 48px, #e8eaee 100%);
@@ -729,4 +755,7 @@ html[data-theme="light"] .terminal-workspace {
 html[data-theme="light"] .chart-workspace,
 html[data-theme="light"] .chart-draw-rail {
   background: #f7f8fa;
+}
+html[data-theme="light"] .side-drawer-scrim {
+  background: rgba(15, 23, 42, 0.25);
 }

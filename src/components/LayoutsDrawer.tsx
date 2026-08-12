@@ -129,7 +129,7 @@ export function LayoutsDrawer() {
       <div className="min-h-0 flex-1 overflow-auto">
         <section>
           <div className={drawerSectionLabel}>Layout tabs</div>
-          <ul className="mx-2 mb-2 flex flex-col gap-0.5 rounded-[2px] bg-[#07090d] p-0.5">
+          <ul className="mx-2 mb-2 flex flex-col gap-0.5 rounded-[2px] bg-terminal-chrome p-0.5">
             {PRESET_ROWS.map((row) => {
               const active = activeLayoutId === row.id;
               const count =
@@ -181,7 +181,7 @@ export function LayoutsDrawer() {
               No saved tabs — arrange widgets, then save a name (or use + on the tab bar).
             </div>
           ) : (
-            <ul className="mx-2 mb-1 flex flex-col gap-0.5 rounded-[2px] bg-[#07090d] p-0.5">
+            <ul className="mx-2 mb-1 flex flex-col gap-0.5 rounded-[2px] bg-terminal-chrome p-0.5">
               {userTemplates.map((t) => {
                 const active = activeLayoutId === t.id;
                 return (

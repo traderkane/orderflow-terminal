@@ -40,8 +40,8 @@ export function LayoutTabs() {
   };
 
   return (
-    <div className="layout-tabs flex h-6 shrink-0 items-center gap-0.5 border-b border-terminal-border bg-[#07090d] px-2">
-      <div className="mr-1 hidden text-[9px] font-medium uppercase tracking-[0.14em] text-terminal-label sm:block">
+    <div className="layout-tabs flex h-6 shrink-0 items-center gap-0.5 border-b border-terminal-border bg-terminal-chrome px-2">
+      <div className="mr-1 hidden font-mono text-[9px] font-medium uppercase tracking-[0.14em] text-terminal-label sm:block">
         Layout
       </div>
       <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
@@ -53,7 +53,7 @@ export function LayoutTabs() {
               type="button"
               onClick={() => applyLayoutTab(tab.id)}
               title={tab.builtin ? `${tab.name} layout` : `Load “${tab.name}”`}
-              className={`h-5 max-w-[9rem] shrink-0 truncate rounded-[2px] px-2 text-[10px] font-medium tracking-wide transition-colors ${
+              className={`h-5 max-w-[9rem] shrink-0 truncate rounded-[2px] px-2 font-mono text-[10px] font-medium uppercase tracking-[0.12em] transition-colors ${
                 active
                   ? 'bg-white/[0.08] text-zinc-100'
                   : 'text-terminal-muted hover:bg-white/[0.03] hover:text-zinc-300'

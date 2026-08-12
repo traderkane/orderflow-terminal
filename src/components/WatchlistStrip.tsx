@@ -79,8 +79,8 @@ export function WatchlistStrip() {
   };
 
   return (
-    <div className="watchlist-strip flex h-7 shrink-0 items-center gap-0.5 border-b border-terminal-border bg-[#07090d] px-2">
-      <div className="mr-1 hidden text-[9px] font-medium uppercase tracking-[0.14em] text-terminal-label sm:block">
+    <div className="watchlist-strip flex h-6 shrink-0 items-center gap-0.5 border-b border-terminal-border bg-terminal-chrome px-2">
+      <div className="mr-1 hidden font-mono text-[9px] font-medium uppercase tracking-[0.14em] text-terminal-label sm:block">
         Watch
       </div>
 

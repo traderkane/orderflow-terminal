@@ -104,7 +104,6 @@ export function TerminalGrid() {
   const setLayout = useTerminalStore((s) => s.setLayout);
   const removeWidget = useTerminalStore((s) => s.removeWidget);
   const chartMaximized = useTerminalStore((s) => s.chartMaximized);
-  const setChartMaximized = useTerminalStore((s) => s.setChartMaximized);
   const { width, containerRef, mounted } = useContainerWidth();
   const [containerHeight, setContainerHeight] = useState(0);
   const byId = useMemo(() => new Map(widgets.map((w) => [w.id, w])), [widgets]);
@@ -125,6 +124,12 @@ export function TerminalGrid() {
     [containerHeight, rows],
   );
 
+  // First / main chart only — secondary chart widgets never enter maximize chrome.
+  const mainChartId = useMemo(
+    () => widgets.find((w) => w.type === 'chart')?.id ?? null,
+    [widgets],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -137,21 +142,14 @@ export function TerminalGrid() {
         return;
       }
       if (e.key === 'f' || e.key === 'F') {
-        // Toggle maximize when a chart exists
-        const hasChart = widgets.some((w) => w.type === 'chart');
-        if (!hasChart) return;
+        if (!mainChartId) return;
         e.preventDefault();
         useTerminalStore.getState().toggleChartMaximized();
-        return;
-      }
-      if (e.key === 'Escape' && chartMaximized) {
-        e.preventDefault();
-        setChartMaximized(false);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [widgets, chartMaximized, setChartMaximized]);
+  }, [mainChartId]);
 
   return (
     <div
@@ -191,7 +189,7 @@ export function TerminalGrid() {
           {layout.map((item) => {
             const widget = byId.get(item.i);
             if (!widget) return <div key={item.i} />;
-            const isChart = widget.type === 'chart';
+            const isMainChart = widget.type === 'chart' && widget.id === mainChartId;
             if (widget.type === 'tabDock') {
               return (
                 <div key={item.i} className="h-full is-side-widget">
@@ -206,16 +204,16 @@ export function TerminalGrid() {
             return (
               <div
                 key={item.i}
-                className={`h-full ${isChart ? 'is-chart-widget' : 'is-side-widget'}`}
+                className={`h-full ${isMainChart ? 'is-chart-widget' : 'is-side-widget'}`}
               >
                 <WidgetShell
                   title={WIDGET_META[widget.type].title}
                   onClose={
-                    chartMaximized && isChart
+                    chartMaximized && isMainChart
                       ? undefined
                       : () => removeWidget(widget.id)
                   }
-                  actions={isChart ? <ChartMaximizeButton /> : undefined}
+                  actions={isMainChart ? <ChartMaximizeButton /> : undefined}
                 >
                   {renderWidget(widget.type)}
                 </WidgetShell>

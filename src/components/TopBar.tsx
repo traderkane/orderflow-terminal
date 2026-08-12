@@ -44,7 +44,7 @@ export function TopBar() {
           : "bg-amber-400";
 
   return (
-    <header className="topbar flex h-8 shrink-0 items-center gap-1.5 border-b border-terminal-border bg-[#06080c] px-2">
+    <header className="topbar flex h-8 shrink-0 items-center gap-1.5 border-b border-terminal-border bg-terminal-chrome px-2">
       {/* Dominant: symbol + last + change */}
       <div className="flex min-w-0 items-baseline gap-2">
         <SymbolPicker />

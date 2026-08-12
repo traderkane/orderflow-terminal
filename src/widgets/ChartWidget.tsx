@@ -1753,16 +1753,18 @@ export function ChartWidget() {
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
         setVwapMenuOpen(false);
         setBarStatsMenuOpen(false);
         setLayersMenuOpen(false);
       }
     };
     window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
     return () => {
       window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onKey, true);
     };
   }, [vwapMenuOpen, barStatsMenuOpen, layersMenuOpen]);
 
@@ -1817,7 +1819,9 @@ export function ChartWidget() {
           selectedIdRef.current ||
           priceEdit
         ) {
-          e.stopPropagation();
+          // Capture + stopImmediate so App unmaximize / drawer Esc wait their turn.
+          e.preventDefault();
+          e.stopImmediatePropagation();
           setTool('select');
           toolRef.current = 'select';
           draftRef.current = null;
@@ -1843,8 +1847,8 @@ export function ChartWidget() {
         persistDrawings(next);
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [priceEdit]);
 
@@ -1945,7 +1949,7 @@ export function ChartWidget() {
   return (
     <div className={`chart-workspace relative flex h-full min-h-0 ${cursorClass}`}>
       {/* Vertical drawing toolbar — MMT/TV style */}
-      <aside className="chart-draw-rail z-[4] flex w-8 shrink-0 flex-col items-center gap-0.5 border-r border-terminal-border bg-[#080a0e] py-1">
+      <aside className="chart-draw-rail z-[4] flex w-8 shrink-0 flex-col items-center gap-0.5 border-r border-terminal-border bg-terminal-header py-1">
         <ToolIcon
           title="Select / move (Esc)"
           active={isSelectTool(tool)}

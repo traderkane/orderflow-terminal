@@ -360,7 +360,7 @@ export function CommandPalette() {
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
-        className="flex w-full max-w-xl flex-col overflow-hidden rounded border border-terminal-border bg-[#06080c] shadow-2xl"
+        className="flex w-full max-w-xl flex-col overflow-hidden rounded-[2px] border border-terminal-border bg-terminal-chrome shadow-2xl"
       >
         <div className="flex h-9 items-center gap-2 border-b border-terminal-border px-2.5">
           <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-terminal-label">

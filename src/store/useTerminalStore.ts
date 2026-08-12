@@ -548,6 +548,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
         widgets: DEFAULT_WIDGETS,
         layout: DEFAULT_LAYOUT,
         activeLayoutId: LAYOUT_TAB_DEFAULT_ID,
+        chartMaximized: false,
       });
       persist(DEFAULT_WIDGETS, DEFAULT_LAYOUT);
       persistActiveLayoutId(LAYOUT_TAB_DEFAULT_ID);
@@ -567,9 +568,16 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     },
 
     removeWidget: (id) => {
+      const removed = get().widgets.find((w) => w.id === id);
       const widgets = get().widgets.filter((w) => w.id !== id);
       const layout = get().layout.filter((l) => l.i !== id);
-      set({ widgets, layout });
+      const clearMax =
+        removed?.type === 'chart' || !widgets.some((w) => w.type === 'chart');
+      set({
+        widgets,
+        layout,
+        ...(clearMax ? { chartMaximized: false } : {}),
+      });
       persist(widgets, layout);
     },
 
@@ -799,7 +807,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
       if (!tpl) return;
       const widgets = structuredClone(tpl.widgets);
       const layout = structuredClone(tpl.layout);
-      set({ widgets, layout, activeLayoutId: id });
+      set({ widgets, layout, activeLayoutId: id, chartMaximized: false });
       persist(widgets, layout);
       persistActiveLayoutId(id);
       get().pushToast({ kind: 'info', title: 'Layout loaded', body: `"${tpl.name}" applied` });

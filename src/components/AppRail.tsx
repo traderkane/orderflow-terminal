@@ -56,7 +56,7 @@ export function AppRail() {
 
   return (
     <aside
-      className="app-rail flex w-10 shrink-0 flex-col items-center border-r border-terminal-border bg-[#06080c] py-1.5"
+      className="app-rail flex w-10 shrink-0 flex-col items-center border-r border-terminal-border bg-terminal-chrome py-1.5"
       aria-label="App rail"
     >
       <div className="mb-1 flex h-7 w-7 items-center justify-center rounded-[2px] bg-up/15 text-[11px] font-bold leading-none text-up" title="Flow Terminal">

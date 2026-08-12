@@ -25,7 +25,7 @@ export function ToastStack() {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`pointer-events-auto overflow-hidden rounded border shadow-panel ${
+          className={`pointer-events-auto overflow-hidden rounded-[2px] border shadow-panel ${
             t.kind === 'alert'
               ? 'border-accent/40 bg-[#12100a]'
               : 'border-terminal-border bg-terminal-panel'
@@ -44,7 +44,7 @@ export function ToastStack() {
             <button
               type="button"
               onClick={() => dismissToast(t.id)}
-              className="rounded px-1 text-[11px] text-zinc-600 hover:text-zinc-300"
+              className="rounded-[2px] px-1 text-[11px] text-zinc-600 hover:text-zinc-300"
             >
               ×
             </button>
