@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   CandlestickSeries,
   ColorType,
@@ -13,16 +13,22 @@ import {
   type Time,
 } from 'lightweight-charts';
 import {
+  applyDrawingDrag,
   deleteControlAnchor,
   drawChartDrawings,
+  formatDrawingPrice,
   getSymbolDrawings,
-  hitTestDrawing,
+  hitTestDrawingDetailed,
+  isPlaceTool,
+  isSelectTool,
   loadDrawings,
   newDrawingId,
   saveDrawings,
   setSymbolDrawings,
   type ChartDrawing,
+  type DrawingHit,
   type DrawingTool,
+  type HandleId,
   type TwoPointDraft,
 } from '../lib/chartDrawings';
 import { CHART_INTERVALS, type ChartInterval } from '../lib/chartIntervals';
@@ -36,8 +42,9 @@ const GRID = '#12161e';
 const TEXT = '#6b7280';
 const ACCENT = '#f0b90b';
 
+type HoverCursor = 'crosshair' | 'grab' | 'grabbing' | 'pointer' | 'default';
+
 function frameTimeSec(t: number): number {
-  // Live heatmap uses ms; mock uses unix seconds.
   return t > 1e12 ? t / 1000 : t;
 }
 
@@ -45,7 +52,6 @@ function tradeTimeSec(t: number): number {
   return t > 1e12 ? t / 1000 : t;
 }
 
-/** Fallback VPVR from recent trades, else candles. */
 function buildFallbackProfile(
   trades: Trade[],
   candles: Candle[],
@@ -81,6 +87,13 @@ function buildFallbackProfile(
   return [...bins.values()].sort((a, b) => a.price - b.price).slice(-80);
 }
 
+type DragState = {
+  id: string;
+  handle: HandleId;
+  lastPrice: number;
+  lastTime: number;
+};
+
 export function ChartWidget() {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -100,15 +113,19 @@ export function ChartWidget() {
     bubbles: true,
   });
 
-  const [tool, setTool] = useState<DrawingTool>(null);
+  const [tool, setTool] = useState<DrawingTool>('select');
   const [drawings, setDrawings] = useState<ChartDrawing[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deletePos, setDeletePos] = useState<{ x: number; y: number } | null>(null);
+  const [hoverCursor, setHoverCursor] = useState<HoverCursor>('default');
+  const [priceEdit, setPriceEdit] = useState<{ id: string; value: string } | null>(null);
 
-  const toolRef = useRef<DrawingTool>(null);
+  const toolRef = useRef<DrawingTool>('select');
   const drawingsRef = useRef<ChartDrawing[]>([]);
   const selectedIdRef = useRef<string | null>(null);
   const draftRef = useRef<TwoPointDraft | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+  const suppressClickRef = useRef(false);
   const symbolRef = useRef(useTerminalStore.getState().symbol);
 
   const feed = useTerminalStore((s) => s.feed);
@@ -138,6 +155,13 @@ export function ChartWidget() {
   selectedIdRef.current = selectedId;
   symbolRef.current = symbol;
 
+  const setChartInteraction = (enabled: boolean) => {
+    chartRef.current?.applyOptions({
+      handleScroll: enabled,
+      handleScale: enabled,
+    });
+  };
+
   const persistDrawings = (next: ChartDrawing[]) => {
     drawingsRef.current = next;
     setDrawings(next);
@@ -162,6 +186,29 @@ export function ChartWidget() {
     }
     const anchor = deleteControlAnchor(d, chart, series, parent.clientWidth);
     setDeletePos(anchor);
+  };
+
+  const pointFromEvent = (
+    clientX: number,
+    clientY: number,
+  ): { x: number; y: number; price: number; time: number } | null => {
+    const parent = containerRef.current;
+    const chart = chartRef.current;
+    const series = candleRef.current;
+    if (!parent || !chart || !series) return null;
+    const rect = parent.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const price = series.coordinateToPrice(y);
+    if (price == null || !Number.isFinite(Number(price))) return null;
+    let tSec: number | null = null;
+    const timeVal = chart.timeScale().coordinateToTime(x);
+    if (typeof timeVal === 'number') tSec = timeVal;
+    if (tSec == null || !Number.isFinite(tSec)) {
+      // Fallback: logical estimate from visible range mid when off-scale
+      tSec = Date.now() / 1000;
+    }
+    return { x, y, price: Number(price), time: tSec };
   };
 
   const drawHeatmapLayer = (
@@ -299,7 +346,6 @@ export function ChartWidget() {
     const maxBarW = Math.max(36, plotW * 0.18);
     const right = plotW - 2;
 
-    // Soft backdrop so bars stay readable over candles/heatmap.
     ctx.fillStyle = 'rgba(5, 6, 8, 0.28)';
     ctx.fillRect(right - maxBarW - 4, 0, maxBarW + 6, paneH);
 
@@ -382,15 +428,12 @@ export function ChartWidget() {
     const timeScale = chart.timeScale();
     const maxSize = Math.max(...large.map((t) => t.size), floor);
     const nowSec = tradeTimeSec(trades[0]?.time ?? Date.now());
-
-    // Oldest first so newer bubbles paint on top.
     const ordered = [...large].sort((a, b) => a.time - b.time);
 
     for (const t of ordered) {
       const tSec = tradeTimeSec(t.time);
       const xBase = timeScale.timeToCoordinate(Math.floor(tSec) as Time);
       if (xBase == null || !Number.isFinite(xBase)) continue;
-      // Mild intra-minute offset so stacked prints don't fully overlap.
       const frac = tSec - Math.floor(tSec / 60) * 60;
       const x = (xBase as number) + Math.min(10, (frac / 60) * 12);
 
@@ -455,7 +498,6 @@ export function ChartWidget() {
     if (flags.bubbles) drawBubblesLayer(ctx, chart, series);
     if (flags.profile) drawProfileLayer(ctx, chart, series, h);
 
-    // Drawings sit above Heatmap / Bubbles / Profile.
     drawChartDrawings(
       ctx,
       chart,
@@ -477,7 +519,6 @@ export function ChartWidget() {
     });
   };
 
-  // Load drawings when symbol changes.
   useEffect(() => {
     const next = getSymbolDrawings(loadDrawings(), symbol);
     drawingsRef.current = next;
@@ -485,7 +526,9 @@ export function ChartWidget() {
     setSelectedId(null);
     selectedIdRef.current = null;
     draftRef.current = null;
+    dragRef.current = null;
     setDeletePos(null);
+    setPriceEdit(null);
     scheduleOverlays();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
@@ -581,7 +624,12 @@ export function ChartWidget() {
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
     chart.timeScale().subscribeVisibleTimeRangeChange(onRange);
 
-    const onClick = (param: MouseEventParams<Time>) => {
+    const placeOrSelect = (param: MouseEventParams<Time>) => {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false;
+        return;
+      }
+      if (dragRef.current) return;
       const series = candleRef.current;
       if (!series || !param.point) return;
 
@@ -589,8 +637,25 @@ export function ChartWidget() {
       const price = series.coordinateToPrice(y);
       if (price == null || !Number.isFinite(Number(price))) return;
       const priceN = Number(price);
-
       const active = toolRef.current;
+
+      if (active === 'eraser') {
+        const hit = hitTestDrawingDetailed(
+          drawingsRef.current,
+          chart,
+          series,
+          x,
+          y,
+          selectedIdRef.current,
+        );
+        if (hit) {
+          const next = drawingsRef.current.filter((d) => d.id !== hit.drawing.id);
+          selectedIdRef.current = null;
+          setSelectedId(null);
+          persistDrawings(next);
+        }
+        return;
+      }
 
       if (active === 'hline') {
         const next: ChartDrawing[] = [
@@ -605,7 +670,6 @@ export function ChartWidget() {
 
       if (active === 'trend' || active === 'rect' || active === 'fib') {
         const timeVal = chart.timeScale().coordinateToTime(x);
-        // Prefer chart time; fall back to logical mapping via param.time.
         let tSec: number | null = null;
         if (typeof timeVal === 'number') tSec = timeVal;
         else if (typeof param.time === 'number') tSec = param.time;
@@ -638,9 +702,16 @@ export function ChartWidget() {
         return;
       }
 
-      // Select mode — hit-test drawings (does not block chart pan/zoom).
-      const hit = hitTestDrawing(drawingsRef.current, chart, series, x, y);
-      const id = hit?.id ?? null;
+      // Select mode
+      const hit = hitTestDrawingDetailed(
+        drawingsRef.current,
+        chart,
+        series,
+        x,
+        y,
+        selectedIdRef.current,
+      );
+      const id = hit?.drawing.id ?? null;
       selectedIdRef.current = id;
       setSelectedId(id);
       scheduleOverlays();
@@ -648,22 +719,165 @@ export function ChartWidget() {
 
     const onCrosshair = (param: MouseEventParams<Time>) => {
       const draft = draftRef.current;
-      if (!draft || !param.point) return;
+      if (draft && param.point) {
+        const series = candleRef.current;
+        if (series) {
+          const price = series.coordinateToPrice(param.point.y);
+          if (price != null && Number.isFinite(Number(price))) {
+            let tSec: number | null = null;
+            const timeVal = chart.timeScale().coordinateToTime(param.point.x);
+            if (typeof timeVal === 'number') tSec = timeVal;
+            else if (typeof param.time === 'number') tSec = param.time;
+            if (tSec != null) {
+              draftRef.current = { ...draft, t2: tSec, p2: Number(price) };
+              scheduleOverlays();
+            }
+          }
+        }
+      }
+
+      // Hover cursor in select mode
+      if (!param.point || dragRef.current) return;
       const series = candleRef.current;
       if (!series) return;
-      const price = series.coordinateToPrice(param.point.y);
-      if (price == null || !Number.isFinite(Number(price))) return;
-      let tSec: number | null = null;
-      const timeVal = chart.timeScale().coordinateToTime(param.point.x);
-      if (typeof timeVal === 'number') tSec = timeVal;
-      else if (typeof param.time === 'number') tSec = param.time;
-      if (tSec == null) return;
-      draftRef.current = { ...draft, t2: tSec, p2: Number(price) };
+      const active = toolRef.current;
+      if (isPlaceTool(active) || active === 'eraser') {
+        setHoverCursor(active === 'eraser' ? 'pointer' : 'crosshair');
+        return;
+      }
+      const hit = hitTestDrawingDetailed(
+        drawingsRef.current,
+        chart,
+        series,
+        param.point.x,
+        param.point.y,
+        selectedIdRef.current,
+      );
+      if (!hit) {
+        setHoverCursor('default');
+        return;
+      }
+      if (hit.handle === 'p1' || hit.handle === 'p2') setHoverCursor('pointer');
+      else setHoverCursor('grab');
+    };
+
+    chart.subscribeClick(placeOrSelect);
+    chart.subscribeCrosshairMove(onCrosshair);
+
+    const parent = containerRef.current;
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      if (!isSelectTool(toolRef.current)) return;
+      const series = candleRef.current;
+      if (!series || !chartRef.current) return;
+      const pt = pointFromEvent(e.clientX, e.clientY);
+      if (!pt) return;
+      const hit: DrawingHit | null = hitTestDrawingDetailed(
+        drawingsRef.current,
+        chartRef.current,
+        series,
+        pt.x,
+        pt.y,
+        selectedIdRef.current,
+      );
+      if (!hit) return;
+
+      // Start drag — disable chart pan/zoom
+      e.preventDefault();
+      e.stopPropagation();
+      dragRef.current = {
+        id: hit.drawing.id,
+        handle: hit.handle,
+        lastPrice: pt.price,
+        lastTime: pt.time,
+      };
+      selectedIdRef.current = hit.drawing.id;
+      setSelectedId(hit.drawing.id);
+      setChartInteraction(false);
+      setHoverCursor('grabbing');
+      scheduleOverlays();
+      try {
+        parent.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const pt = pointFromEvent(e.clientX, e.clientY);
+      if (!pt) return;
+      const priceDelta = pt.price - drag.lastPrice;
+      const timeDelta = pt.time - drag.lastTime;
+      if (priceDelta === 0 && timeDelta === 0) return;
+
+      const next = drawingsRef.current.map((d) => {
+        if (d.id !== drag.id) return d;
+        // Horizontals only move in price
+        if (d.type === 'hline') {
+          return applyDrawingDrag(d, 'body', priceDelta, 0);
+        }
+        return applyDrawingDrag(d, drag.handle, priceDelta, timeDelta);
+      });
+      drawingsRef.current = next;
+      setDrawings(next);
+      dragRef.current = {
+        ...drag,
+        lastPrice: pt.price,
+        lastTime: pt.time,
+      };
       scheduleOverlays();
     };
 
-    chart.subscribeClick(onClick);
-    chart.subscribeCrosshairMove(onCrosshair);
+    const endDrag = (e: PointerEvent) => {
+      if (!dragRef.current) return;
+      suppressClickRef.current = true;
+      const all = loadDrawings();
+      saveDrawings(setSymbolDrawings(all, symbolRef.current, drawingsRef.current));
+      dragRef.current = null;
+      setChartInteraction(true);
+      setHoverCursor('grab');
+      try {
+        parent.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      scheduleOverlays();
+    };
+
+    const onDblClick = (e: MouseEvent) => {
+      if (!isSelectTool(toolRef.current)) return;
+      const series = candleRef.current;
+      const chartApi = chartRef.current;
+      if (!series || !chartApi) return;
+      const pt = pointFromEvent(e.clientX, e.clientY);
+      if (!pt) return;
+      const hit = hitTestDrawingDetailed(
+        drawingsRef.current,
+        chartApi,
+        series,
+        pt.x,
+        pt.y,
+        selectedIdRef.current,
+      );
+      if (!hit || hit.drawing.type !== 'hline') return;
+      e.preventDefault();
+      e.stopPropagation();
+      selectedIdRef.current = hit.drawing.id;
+      setSelectedId(hit.drawing.id);
+      setPriceEdit({
+        id: hit.drawing.id,
+        value: formatDrawingPrice(hit.drawing.price).replace(/,/g, ''),
+      });
+    };
+
+    parent.addEventListener('pointerdown', onPointerDown, true);
+    parent.addEventListener('pointermove', onPointerMove);
+    parent.addEventListener('pointerup', endDrag);
+    parent.addEventListener('pointercancel', endDrag);
+    parent.addEventListener('dblclick', onDblClick);
 
     const ro = new ResizeObserver(() => {
       if (!containerRef.current) return;
@@ -677,7 +891,12 @@ export function ChartWidget() {
 
     return () => {
       ro.disconnect();
-      chart.unsubscribeClick(onClick);
+      parent.removeEventListener('pointerdown', onPointerDown, true);
+      parent.removeEventListener('pointermove', onPointerMove);
+      parent.removeEventListener('pointerup', endDrag);
+      parent.removeEventListener('pointercancel', endDrag);
+      parent.removeEventListener('dblclick', onDblClick);
+      chart.unsubscribeClick(placeOrSelect);
       chart.unsubscribeCrosshairMove(onCrosshair);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
       chart.timeScale().unsubscribeVisibleTimeRangeChange(onRange);
@@ -763,10 +982,15 @@ export function ChartWidget() {
 
   useEffect(() => {
     scheduleOverlays();
+    // Disable pan while placing tools so clicks don't scrub the chart
+    const placing = isPlaceTool(tool) || tool === 'eraser';
+    if (!dragRef.current) setChartInteraction(!placing);
+    if (isPlaceTool(tool)) setHoverCursor('crosshair');
+    else if (tool === 'eraser') setHoverCursor('pointer');
+    else if (!dragRef.current) setHoverCursor('default');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showHeatmap, showProfile, showBubbles, selectedId, drawings, tool]);
 
-  // Delete / Backspace removes selected; Escape cancels tool / draft / selection.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -780,13 +1004,21 @@ export function ChartWidget() {
       }
 
       if (e.key === 'Escape') {
-        if (toolRef.current || draftRef.current || selectedIdRef.current) {
+        if (
+          toolRef.current !== 'select' ||
+          draftRef.current ||
+          selectedIdRef.current ||
+          priceEdit
+        ) {
           e.stopPropagation();
-          setTool(null);
-          toolRef.current = null;
+          setTool('select');
+          toolRef.current = 'select';
           draftRef.current = null;
           selectedIdRef.current = null;
           setSelectedId(null);
+          setPriceEdit(null);
+          dragRef.current = null;
+          setChartInteraction(true);
           scheduleOverlays();
         }
         return;
@@ -807,18 +1039,21 @@ export function ChartWidget() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [priceEdit]);
 
-  const toggleTool = (next: DrawingTool) => {
+  const selectTool = (next: DrawingTool) => {
     draftRef.current = null;
-    if (tool === next) {
-      setTool(null);
-      toolRef.current = null;
+    const resolved = next ?? 'select';
+    if (tool === resolved || (isSelectTool(tool) && isSelectTool(resolved))) {
+      setTool('select');
+      toolRef.current = 'select';
     } else {
-      setTool(next);
-      toolRef.current = next;
-      selectedIdRef.current = null;
-      setSelectedId(null);
+      setTool(resolved);
+      toolRef.current = resolved;
+      if (!isSelectTool(resolved)) {
+        selectedIdRef.current = null;
+        setSelectedId(null);
+      }
     }
     scheduleOverlays();
   };
@@ -839,98 +1074,165 @@ export function ChartWidget() {
     persistDrawings(next);
   };
 
+  const commitPriceEdit = () => {
+    if (!priceEdit) return;
+    const parsed = Number(priceEdit.value.replace(/,/g, ''));
+    if (!Number.isFinite(parsed)) {
+      setPriceEdit(null);
+      return;
+    }
+    const next = drawingsRef.current.map((d) =>
+      d.id === priceEdit.id && d.type === 'hline' ? { ...d, price: parsed } : d,
+    );
+    setPriceEdit(null);
+    persistDrawings(next);
+  };
+
   const cursorClass =
-    tool === 'hline' || tool === 'trend' || tool === 'rect' || tool === 'fib'
+    hoverCursor === 'crosshair'
       ? 'cursor-crosshair'
-      : '';
+      : hoverCursor === 'grab'
+        ? 'cursor-grab'
+        : hoverCursor === 'grabbing'
+          ? 'cursor-grabbing'
+          : hoverCursor === 'pointer'
+            ? 'cursor-pointer'
+            : '';
+
+  const toolHint =
+    tool === 'hline'
+      ? 'Click to place horizontal'
+      : tool === 'trend'
+        ? 'Trend — click start, then end · Esc select'
+        : tool === 'rect'
+          ? 'Rect — click opposite corners · Esc select'
+          : tool === 'fib'
+            ? 'Fib — click 0, then 1 · Esc select'
+            : tool === 'eraser'
+              ? 'Click a drawing to erase · Esc select'
+              : null;
 
   return (
-    <div className={`relative flex h-full flex-col ${cursorClass}`}>
-      <div className="absolute left-1.5 top-1.5 z-10 flex items-center gap-1">
-        <div className="flex overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
-          {CHART_INTERVALS.map((iv) => (
-            <TfPill
-              key={iv}
-              label={iv}
-              on={chartInterval === iv}
-              onClick={() => setChartInterval(iv)}
-            />
-          ))}
-        </div>
-        <div className="flex overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
-          <Toggle label="Heatmap" on={showHeatmap} onClick={() => setShowHeatmap(!showHeatmap)} />
-          <Toggle label="Profile" on={showProfile} onClick={() => setShowProfile(!showProfile)} />
-          <Toggle label="Bubbles" on={showBubbles} onClick={() => setShowBubbles(!showBubbles)} />
-          <Toggle label="VWAP" on={showVwap} onClick={() => setShowVwap(!showVwap)} />
-          <Toggle label="CVD" on={showCvdOverlay} onClick={() => setShowCvdOverlay(!showCvdOverlay)} />
-          <Toggle label="Liqs" on={showLiqMarkers} onClick={() => setShowLiqMarkers(!showLiqMarkers)} />
-        </div>
-      </div>
-
-      <div className="absolute right-1.5 top-1.5 z-10 flex overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
-        <Toggle
-          label="H-Line"
-          on={tool === 'hline'}
-          onClick={() => toggleTool('hline')}
-          title="Horizontal line — click chart to place"
-        />
-        <Toggle
-          label="Trend"
-          on={tool === 'trend'}
-          onClick={() => toggleTool('trend')}
-          title="Trend line — two clicks to place"
-        />
-        <Toggle
-          label="Rect"
-          on={tool === 'rect'}
-          onClick={() => toggleTool('rect')}
-          title="Rectangle — two clicks for opposite corners"
-        />
-        <Toggle
-          label="Fib"
-          on={tool === 'fib'}
-          onClick={() => toggleTool('fib')}
-          title="Fib retracement — two clicks (0→1), levels 0/0.236/0.382/0.5/0.618/0.786/1"
-        />
-        <Toggle
-          label="Clear"
-          on={false}
-          onClick={clearAllDrawings}
-          title="Clear all drawings for this symbol"
-          danger
-        />
-      </div>
-
-      {tool && (
-        <div className="pointer-events-none absolute left-1/2 top-8 z-10 -translate-x-1/2 rounded-[2px] border border-terminal-border bg-black/60 px-2 py-0.5 text-[10px] uppercase tracking-wider text-zinc-400 backdrop-blur-[2px]">
-          {tool === 'hline'
-            ? 'Click to place horizontal'
-            : tool === 'trend'
-              ? 'Trend — click start, then end · Esc cancel'
-              : tool === 'rect'
-                ? 'Rect — click opposite corners · Esc cancel'
-                : 'Fib — click 0, then 1 · Esc cancel'}
-        </div>
-      )}
-
-      <div ref={containerRef} className="h-full w-full" />
-      <canvas
-        ref={overlayRef}
-        className="pointer-events-none absolute inset-0 z-[1]"
-        aria-hidden
-      />
-
-      {selectedId && deletePos && (
-        <button
-          type="button"
-          title="Delete drawing"
-          onClick={deleteSelected}
-          className="absolute z-[3] flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[2px] border border-terminal-border-strong bg-black/80 text-[10px] leading-none text-zinc-300 hover:border-down/50 hover:text-down"
-          style={{ left: deletePos.x, top: deletePos.y }}
+    <div className={`chart-workspace relative flex h-full min-h-0 ${cursorClass}`}>
+      {/* Vertical drawing toolbar — MMT/TV style */}
+      <aside className="chart-draw-rail z-[4] flex w-8 shrink-0 flex-col items-center gap-0.5 border-r border-terminal-border bg-[#080a0e] py-1">
+        <ToolIcon
+          title="Select / move (Esc)"
+          active={isSelectTool(tool)}
+          onClick={() => selectTool('select')}
         >
-          ×
-        </button>
-      )}
+          <IconCursor />
+        </ToolIcon>
+        <ToolIcon
+          title="Horizontal line"
+          active={tool === 'hline'}
+          onClick={() => selectTool('hline')}
+        >
+          <IconHLine />
+        </ToolIcon>
+        <ToolIcon
+          title="Trend line — two clicks"
+          active={tool === 'trend'}
+          onClick={() => selectTool('trend')}
+        >
+          <IconTrend />
+        </ToolIcon>
+        <ToolIcon
+          title="Rectangle — two clicks"
+          active={tool === 'rect'}
+          onClick={() => selectTool('rect')}
+        >
+          <IconRect />
+        </ToolIcon>
+        <ToolIcon
+          title="Fib retracement — two clicks"
+          active={tool === 'fib'}
+          onClick={() => selectTool('fib')}
+        >
+          <IconFib />
+        </ToolIcon>
+        <div className="my-0.5 h-px w-5 bg-terminal-border" />
+        <ToolIcon
+          title="Eraser — click a drawing"
+          active={tool === 'eraser'}
+          onClick={() => selectTool('eraser')}
+        >
+          <IconEraser />
+        </ToolIcon>
+        <ToolIcon title="Clear all drawings" active={false} danger onClick={clearAllDrawings}>
+          <IconClear />
+        </ToolIcon>
+      </aside>
+
+      <div className="relative min-h-0 min-w-0 flex-1">
+        {/* TF pills — compact, top-left of chart content */}
+        <div className="pointer-events-none absolute left-1.5 top-1.5 z-10">
+          <div className="pointer-events-auto flex h-6 overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
+            {CHART_INTERVALS.map((iv) => (
+              <TfPill
+                key={iv}
+                label={iv}
+                on={chartInterval === iv}
+                onClick={() => setChartInterval(iv)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Layer dock — secondary, bottom, doesn't fight drawings */}
+        <div className="pointer-events-none absolute bottom-1.5 left-1.5 right-14 z-10 flex justify-start">
+          <div className="pointer-events-auto flex h-6 items-stretch overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
+            <LayerChip label="Heatmap" short="HM" on={showHeatmap} onClick={() => setShowHeatmap(!showHeatmap)} />
+            <LayerChip label="Profile" short="VP" on={showProfile} onClick={() => setShowProfile(!showProfile)} />
+            <LayerChip label="Bubbles" short="Bub" on={showBubbles} onClick={() => setShowBubbles(!showBubbles)} />
+            <LayerChip label="VWAP" short="VWAP" on={showVwap} onClick={() => setShowVwap(!showVwap)} />
+            <LayerChip label="CVD" short="CVD" on={showCvdOverlay} onClick={() => setShowCvdOverlay(!showCvdOverlay)} />
+            <LayerChip label="Liqs" short="Liq" on={showLiqMarkers} onClick={() => setShowLiqMarkers(!showLiqMarkers)} />
+          </div>
+        </div>
+
+        {toolHint && (
+          <div className="pointer-events-none absolute left-1/2 top-8 z-10 -translate-x-1/2 rounded-[2px] border border-terminal-border bg-black/65 px-2 py-0.5 text-[10px] uppercase tracking-wider text-zinc-400 backdrop-blur-[2px]">
+            {toolHint}
+          </div>
+        )}
+
+        <div ref={containerRef} className="h-full w-full" />
+        <canvas
+          ref={overlayRef}
+          className="pointer-events-none absolute inset-0 z-[1]"
+          aria-hidden
+        />
+
+        {selectedId && deletePos && !priceEdit && (
+          <button
+            type="button"
+            title="Delete drawing"
+            onClick={deleteSelected}
+            className="absolute z-[3] flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[2px] border border-terminal-border-strong bg-black/80 text-[10px] leading-none text-zinc-300 hover:border-down/50 hover:text-down"
+            style={{ left: deletePos.x, top: deletePos.y }}
+          >
+            ×
+          </button>
+        )}
+
+        {priceEdit && (
+          <div className="absolute left-1/2 top-9 z-[5] flex -translate-x-1/2 items-center gap-1 rounded-[2px] border border-accent/40 bg-black/85 px-1.5 py-1 shadow-panel backdrop-blur-[2px]">
+            <span className="text-[9px] uppercase tracking-wider text-terminal-label">Price</span>
+            <input
+              autoFocus
+              value={priceEdit.value}
+              onChange={(e) => setPriceEdit({ ...priceEdit, value: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitPriceEdit();
+                if (e.key === 'Escape') setPriceEdit(null);
+              }}
+              onBlur={commitPriceEdit}
+              className="h-5 w-[96px] rounded-[2px] border border-terminal-border bg-terminal-elevated px-1.5 font-mono text-[11px] text-accent outline-none focus:border-accent/50"
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -949,7 +1251,7 @@ function TfPill({
       type="button"
       title={`Chart timeframe ${label}`}
       onClick={onClick}
-      className={`min-w-[28px] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+      className={`min-w-[28px] px-1.5 text-[10px] font-semibold uppercase tracking-wider ${
         on
           ? 'bg-accent/20 text-accent'
           : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
@@ -960,33 +1262,128 @@ function TfPill({
   );
 }
 
-function Toggle({
+function LayerChip({
   label,
+  short,
   on,
   onClick,
-  title,
-  danger,
 }: {
   label: string;
+  short: string;
   on: boolean;
   onClick: () => void;
-  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      onClick={onClick}
+      className={`px-1.5 text-[9px] font-semibold uppercase tracking-wider ${
+        on
+          ? 'bg-up/15 text-up'
+          : 'text-zinc-600 hover:bg-white/[0.03] hover:text-zinc-300'
+      }`}
+    >
+      <span className="hidden sm:inline">{label}</span>
+      <span className="sm:hidden">{short}</span>
+    </button>
+  );
+}
+
+function ToolIcon({
+  title,
+  active,
+  onClick,
+  danger,
+  children,
+}: {
+  title: string;
+  active: boolean;
+  onClick: () => void;
   danger?: boolean;
+  children: ReactNode;
 }) {
   return (
     <button
       type="button"
       title={title}
       onClick={onClick}
-      className={`px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
-        on
-          ? 'bg-up/15 text-up'
+      className={`flex h-7 w-7 items-center justify-center rounded-[2px] transition-colors ${
+        active
+          ? 'bg-accent/20 text-accent ring-1 ring-accent/40'
           : danger
             ? 'text-zinc-500 hover:bg-down/10 hover:text-down'
-            : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
+            : 'text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200'
       }`}
     >
-      {label}
+      {children}
     </button>
+  );
+}
+
+function IconCursor() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <path d="M3 2l7.5 5.2-3.2.6 1.6 3.4-1.3.6-1.7-3.5L3 10.2V2z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function IconHLine() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <path d="M2 7h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="3" cy="7" r="1.2" fill="currentColor" />
+      <circle cx="11" cy="7" r="1.2" fill="currentColor" />
+    </svg>
+  );
+}
+
+function IconTrend() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <path d="M2.5 11L11.5 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="2.5" cy="11" r="1.3" fill="currentColor" />
+      <circle cx="11.5" cy="3" r="1.3" fill="currentColor" />
+    </svg>
+  );
+}
+
+function IconRect() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <rect x="2.5" y="3.5" width="9" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+function IconFib() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <path d="M2 3.5h10M2 7h10M2 10.5h10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M3 11.5L11 2.5" stroke="currentColor" strokeWidth="1" strokeDasharray="2 1.5" opacity="0.7" />
+    </svg>
+  );
+}
+
+function IconEraser() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <path
+        d="M8.2 2.4l3.4 3.4-5.8 5.8H2.4L8.2 2.4z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+      <path d="M5.2 11.6H12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconClear() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
   );
 }

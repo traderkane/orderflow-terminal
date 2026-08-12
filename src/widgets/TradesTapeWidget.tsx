@@ -5,7 +5,7 @@ export function TradesTapeWidget() {
   const trades = useTerminalStore((s) => s.feed?.trades) ?? [];
 
   return (
-    <div className="flex h-full flex-col font-mono text-[10px] leading-[1.15]">
+    <div className="flex h-full flex-col font-mono text-[10px] leading-[1.05]">
       <div className="grid grid-cols-[1fr_1.1fr_0.9fr_auto] border-b border-terminal-border/80 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em] text-terminal-label">
         <span>Time</span>
         <span className="text-right">Price</span>
@@ -23,7 +23,7 @@ export function TradesTapeWidget() {
           return (
             <div
               key={t.id}
-              className={`grid grid-cols-[1fr_1.1fr_0.9fr_auto] items-center px-1.5 py-[1px] ${
+              className={`grid grid-cols-[1fr_1.1fr_0.9fr_auto] items-center px-1.5 py-px ${
                 huge
                   ? 'bg-accent/10'
                   : big

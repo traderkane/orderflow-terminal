@@ -3,7 +3,7 @@ import { useTerminalStore } from '../store/useTerminalStore';
 import { fmtPrice, fmtSize } from '../lib/format';
 import type { BookLevel, Trade } from '../types/market';
 
-const ROW_H = 18;
+const ROW_H = 16;
 
 export function OrderBookWidget() {
   const book = useTerminalStore((s) => s.feed?.book);
@@ -80,7 +80,7 @@ export function OrderBookWidget() {
   const spreadPct = mid > 0 ? (book.spread / mid) * 100 : 0;
 
   return (
-    <div className="flex h-full flex-col font-mono text-[11px] leading-none">
+    <div className="flex h-full flex-col font-mono text-[10px] leading-none">
       {/* Imbalance bar */}
       <div className="border-b border-terminal-border/80 px-1.5 py-1">
         <div className="mb-0.5 flex items-center justify-between text-[9px] uppercase tracking-[0.12em] text-terminal-label">
@@ -136,7 +136,7 @@ export function OrderBookWidget() {
           <div className="text-right">
             <div className="text-[9px] uppercase tracking-[0.14em] text-terminal-label">Last</div>
             <div
-              className={`tabular-nums text-[12px] font-semibold ${
+              className={`tabular-nums text-[11px] font-semibold ${
                 lastPx >= mid ? 'text-up' : 'text-down'
               }`}
             >
@@ -215,7 +215,7 @@ function LadderRow({
         style={{ width: `${sizePct}%`, background: sizeColor }}
       />
       <span
-        className={`relative tabular-nums text-[11px] font-medium ${
+        className={`relative tabular-nums text-[10px] font-medium ${
           side === 'bid' ? 'text-up' : 'text-down'
         }`}
       >

@@ -141,3 +141,24 @@ select {
 .dom-flash-sell {
   animation: dom-flash-sell 0.4s ease-out;
 }
+
+
+/* Chart workspace — drawing rail + cohesive chrome */
+.chart-workspace {
+  background: #0a0c10;
+}
+.chart-draw-rail {
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
+}
+
+/* Shared dense panel column headers (DOM / tape / footprint) */
+.panel-colhead {
+  border-bottom: 1px solid color-mix(in srgb, var(--color-terminal-border) 80%, transparent);
+  padding: 2px 6px;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-terminal-label);
+  font-family: var(--font-mono);
+}

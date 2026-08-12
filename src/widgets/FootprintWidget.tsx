@@ -87,7 +87,7 @@ export function FootprintWidget() {
     bar.levels.find((l) => l.price === price);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden font-mono text-[10px] leading-[1.1]">
+    <div className="flex h-full flex-col overflow-hidden font-mono text-[9px] leading-[1.05]">
       <div className="flex items-center justify-between border-b border-terminal-border/60 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em] text-terminal-label">
         <span>Cluster · sell | buy · 1m</span>
         <span className="normal-case tracking-normal text-zinc-500" title="Footprint stays on 1m bars; chart TF does not apply">

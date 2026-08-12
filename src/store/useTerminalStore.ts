@@ -30,8 +30,8 @@ import {
   type ChartInterval,
 } from '../lib/chartIntervals';
 
-const LAYOUT_KEY = 'flow-terminal-layout-v5';
-const WIDGETS_KEY = 'flow-terminal-widgets-v5';
+const LAYOUT_KEY = 'flow-terminal-layout-v6';
+const WIDGETS_KEY = 'flow-terminal-widgets-v6';
 const FEED_MODE_KEY = 'flow-terminal-feed-mode';
 const ALERTS_KEY = 'flow-terminal-alerts-v1';
 const ALERT_HISTORY_KEY = 'flow-terminal-alert-history-v1';
@@ -40,32 +40,25 @@ const TEMPLATES_KEY = 'flow-terminal-templates-v1';
 const MAX_ALERT_HISTORY = 40;
 const MAX_TOASTS = 5;
 
+/** Default = Scalp-like: chart-first workspace, DOM+tape tight right, secondary strip. */
 const DEFAULT_WIDGETS: WidgetInstance[] = [
   { id: 'chart', type: 'chart' },
-  { id: 'footprint', type: 'footprint' },
   { id: 'orderbook', type: 'orderbook' },
   { id: 'trades', type: 'trades' },
   { id: 'heatmap', type: 'heatmap' },
   { id: 'cvd', type: 'cvd' },
-  { id: 'volumeProfile', type: 'volumeProfile' },
-  { id: 'liquidationMap', type: 'liquidationMap' },
-  { id: 'tpo', type: 'tpo' },
   { id: 'liquidations', type: 'liquidations' },
   { id: 'stats', type: 'stats' },
 ];
 
 const DEFAULT_LAYOUT: LayoutItem[] = [
-  { i: 'chart', x: 0, y: 0, w: 6, h: 12, minW: 4, minH: 7 },
-  { i: 'footprint', x: 6, y: 0, w: 4, h: 12, minW: 3, minH: 6 },
-  { i: 'orderbook', x: 10, y: 0, w: 2, h: 6, minW: 2, minH: 4 },
-  { i: 'trades', x: 10, y: 6, w: 2, h: 6, minW: 2, minH: 4 },
-  { i: 'heatmap', x: 0, y: 12, w: 3, h: 6, minW: 3, minH: 4 },
-  { i: 'cvd', x: 3, y: 12, w: 2, h: 6, minW: 2, minH: 4 },
-  { i: 'volumeProfile', x: 5, y: 12, w: 2, h: 6, minW: 2, minH: 4 },
-  { i: 'liquidationMap', x: 7, y: 12, w: 2, h: 6, minW: 2, minH: 4 },
-  { i: 'liquidations', x: 9, y: 12, w: 3, h: 6, minW: 2, minH: 3 },
-  { i: 'tpo', x: 0, y: 18, w: 6, h: 8, minW: 3, minH: 5 },
-  { i: 'stats', x: 6, y: 18, w: 6, h: 3, minW: 4, minH: 2 },
+  { i: 'chart', x: 0, y: 0, w: 8, h: 18, minW: 5, minH: 8 },
+  { i: 'orderbook', x: 8, y: 0, w: 2, h: 18, minW: 2, minH: 6 },
+  { i: 'trades', x: 10, y: 0, w: 2, h: 18, minW: 2, minH: 6 },
+  { i: 'heatmap', x: 0, y: 18, w: 4, h: 5, minW: 3, minH: 4 },
+  { i: 'cvd', x: 4, y: 18, w: 3, h: 5, minW: 2, minH: 4 },
+  { i: 'liquidations', x: 7, y: 18, w: 3, h: 5, minW: 2, minH: 3 },
+  { i: 'stats', x: 10, y: 18, w: 2, h: 5, minW: 2, minH: 2 },
 ];
 
 function loadJson<T>(key: string, fallback: T): T {
@@ -531,7 +524,7 @@ export const WIDGET_META: Record<
   WidgetType,
   { title: string; description: string }
 > = {
-  chart: { title: 'Chart', description: 'Candles, heatmap, VPVR, bubbles, VWAP / CVD / liqs' },
+  chart: { title: 'Chart', description: 'Workspace chart — drawings, heatmap, VPVR, bubbles, VWAP / CVD / liqs' },
   orderbook: { title: 'Order Book', description: 'DOM ladder with cumulative depth' },
   trades: { title: 'Trades Tape', description: 'Aggressor buy/sell tape' },
   heatmap: { title: 'Book Heatmap', description: 'Time × price liquidity' },

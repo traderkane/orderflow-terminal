@@ -1,5 +1,6 @@
 import type { LayoutItem, LayoutTemplate, WidgetInstance } from '../types/market';
 
+/** Scalp: large chart workspace, tight DOM+tape on the right, secondary strip below. */
 const SCALP_WIDGETS: WidgetInstance[] = [
   { id: 'chart', type: 'chart' },
   { id: 'orderbook', type: 'orderbook' },
@@ -11,13 +12,13 @@ const SCALP_WIDGETS: WidgetInstance[] = [
 ];
 
 const SCALP_LAYOUT: LayoutItem[] = [
-  { i: 'chart', x: 0, y: 0, w: 7, h: 16, minW: 4, minH: 7 },
-  { i: 'orderbook', x: 7, y: 0, w: 3, h: 16, minW: 2, minH: 6 },
-  { i: 'trades', x: 10, y: 0, w: 2, h: 16, minW: 2, minH: 6 },
-  { i: 'heatmap', x: 0, y: 16, w: 4, h: 6, minW: 3, minH: 4 },
-  { i: 'cvd', x: 4, y: 16, w: 3, h: 6, minW: 2, minH: 4 },
-  { i: 'liquidations', x: 7, y: 16, w: 3, h: 6, minW: 2, minH: 3 },
-  { i: 'stats', x: 10, y: 16, w: 2, h: 6, minW: 2, minH: 2 },
+  { i: 'chart', x: 0, y: 0, w: 8, h: 18, minW: 5, minH: 8 },
+  { i: 'orderbook', x: 8, y: 0, w: 2, h: 18, minW: 2, minH: 6 },
+  { i: 'trades', x: 10, y: 0, w: 2, h: 18, minW: 2, minH: 6 },
+  { i: 'heatmap', x: 0, y: 18, w: 4, h: 5, minW: 3, minH: 4 },
+  { i: 'cvd', x: 4, y: 18, w: 3, h: 5, minW: 2, minH: 4 },
+  { i: 'liquidations', x: 7, y: 18, w: 3, h: 5, minW: 2, minH: 3 },
+  { i: 'stats', x: 10, y: 18, w: 2, h: 5, minW: 2, minH: 2 },
 ];
 
 const PROFILE_WIDGETS: WidgetInstance[] = [

@@ -33,7 +33,7 @@ npm run preview
 
 ## Widgets
 
-1. **Chart** — candles + volume; TF pills **1m / 5m / 15m / 1h** (persisted); toggles for Heatmap, VPVR Profile, trade Bubbles, VWAP, CVD, liquidation markers; drawing tools (H-Line / Trend / Rect / Fib / Clear) persisted per symbol
+1. **Chart** — TradingView/MMT-style workspace: left icon drawing rail (select / H-Line / Trend / Rect / Fib / Eraser / Clear), bottom layer dock, TF pills **1m / 5m / 15m / 1h**; drag-to-move drawings with handles; layers Heatmap / VPVR / Bubbles / VWAP / CVD / Liqs; drawings persisted per symbol
 2. **Order Book / DOM** — bids/asks, depth bars, spread
 3. **Trades Tape** — scrolling aggressor buys/sells with size highlighting
 4. **Order Book Heatmap** — canvas time × price liquidity

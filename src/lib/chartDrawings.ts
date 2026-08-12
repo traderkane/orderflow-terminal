@@ -5,7 +5,8 @@ import type { SymbolId } from '../types/market';
 
 export const DRAWINGS_STORAGE_KEY = 'flow-terminal-drawings-v1';
 
-export type DrawingTool = 'hline' | 'trend' | 'rect' | 'fib' | null;
+/** null / 'select' = cursor mode; eraser deletes on click. */
+export type DrawingTool = 'select' | 'hline' | 'trend' | 'rect' | 'fib' | 'eraser' | null;
 
 export type HorizontalDrawing = {
   id: string;
@@ -60,6 +61,13 @@ export type TwoPointDraft = {
 /** @deprecated alias — prefer TwoPointDraft */
 export type TrendDraft = TwoPointDraft;
 
+export type HandleId = 'body' | 'p1' | 'p2';
+
+export type DrawingHit = {
+  drawing: ChartDrawing;
+  handle: HandleId;
+};
+
 export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
 
 const LINE = 'rgba(212, 212, 216, 0.55)';
@@ -67,12 +75,23 @@ const LINE_SEL = 'rgba(240, 185, 11, 0.85)';
 const LABEL_BG = 'rgba(10, 12, 16, 0.82)';
 const LABEL_FG = 'rgba(228, 228, 231, 0.92)';
 const HIT_PX = 7;
+const HANDLE_HIT = 9;
 const RECT_FILL = 'rgba(212, 212, 216, 0.06)';
 const RECT_FILL_SEL = 'rgba(240, 185, 11, 0.08)';
 const FIB_FILL = 'rgba(240, 185, 11, 0.04)';
 
 export function newDrawingId(): string {
   return `d_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function isPlaceTool(
+  tool: DrawingTool,
+): tool is 'hline' | 'trend' | 'rect' | 'fib' {
+  return tool === 'hline' || tool === 'trend' || tool === 'rect' || tool === 'fib';
+}
+
+export function isSelectTool(tool: DrawingTool): boolean {
+  return tool == null || tool === 'select';
 }
 
 export function loadDrawings(): DrawingsBySymbol {
@@ -179,7 +198,6 @@ function hitRect(
   const right = Math.max(x1, x2);
   const top = Math.min(y1, y2);
   const bot = Math.max(y1, y2);
-  // Border hit (edges). Interior close to border also counts via HIT_PX.
   const onBorder =
     distPointToSeg(x, y, left, top, right, top) <= HIT_PX ||
     distPointToSeg(x, y, left, bot, right, bot) <= HIT_PX ||
@@ -198,15 +216,78 @@ function hitFib(
 ): boolean {
   const left = Math.min(x1, x2);
   const right = Math.max(x1, x2);
-  // Slightly expand hit band past the time span for usability.
   const xPad = 4;
   if (x < left - xPad || x > right + xPad) return false;
   for (const level of FIB_LEVELS) {
     const yy = y1 + (y2 - y1) * level;
     if (Math.abs(y - yy) <= HIT_PX) return true;
   }
-  // Also allow hitting the diagonal guide.
   return distPointToSeg(x, y, x1, y1, x2, y2) <= HIT_PX;
+}
+
+/** Detailed hit-test: prefers endpoint handles when selected / near. */
+export function hitTestDrawingDetailed(
+  drawings: ChartDrawing[],
+  chart: IChartApi,
+  series: ISeriesApi<'Candlestick'>,
+  x: number,
+  y: number,
+  preferredId?: string | null,
+): DrawingHit | null {
+  // Prefer handles on the preferred (selected) drawing first.
+  if (preferredId) {
+    const pref = drawings.find((d) => d.id === preferredId);
+    if (pref) {
+      const handle = hitHandles(pref, chart, series, x, y);
+      if (handle) return { drawing: pref, handle };
+    }
+  }
+
+  for (let i = drawings.length - 1; i >= 0; i--) {
+    const d = drawings[i];
+    const handle = hitHandles(d, chart, series, x, y);
+    if (handle) return { drawing: d, handle };
+
+    if (d.type === 'hline') {
+      const yy = series.priceToCoordinate(d.price);
+      if (yy == null || !Number.isFinite(yy)) continue;
+      if (Math.abs(y - yy) <= HIT_PX) return { drawing: d, handle: 'body' };
+      continue;
+    }
+
+    const c = coordsForTwoPoint(chart, series, d.t1, d.p1, d.t2, d.p2);
+    if (!c) continue;
+
+    if (d.type === 'trend') {
+      if (distPointToSeg(x, y, c.x1, c.y1, c.x2, c.y2) <= HIT_PX) {
+        return { drawing: d, handle: 'body' };
+      }
+    } else if (d.type === 'rect') {
+      if (hitRect(x, y, c.x1, c.y1, c.x2, c.y2)) {
+        return { drawing: d, handle: 'body' };
+      }
+    } else if (d.type === 'fib') {
+      if (hitFib(x, y, c.x1, c.y1, c.x2, c.y2)) {
+        return { drawing: d, handle: 'body' };
+      }
+    }
+  }
+  return null;
+}
+
+function hitHandles(
+  d: ChartDrawing,
+  chart: IChartApi,
+  series: ISeriesApi<'Candlestick'>,
+  x: number,
+  y: number,
+): HandleId | null {
+  if (d.type === 'hline') return null;
+  const c = coordsForTwoPoint(chart, series, d.t1, d.p1, d.t2, d.p2);
+  if (!c) return null;
+  if (Math.hypot(x - c.x1, y - c.y1) <= HANDLE_HIT) return 'p1';
+  if (Math.hypot(x - c.x2, y - c.y2) <= HANDLE_HIT) return 'p2';
+  return null;
 }
 
 export function hitTestDrawing(
@@ -216,28 +297,42 @@ export function hitTestDrawing(
   x: number,
   y: number,
 ): ChartDrawing | null {
-  // Top-most (last) wins.
-  for (let i = drawings.length - 1; i >= 0; i--) {
-    const d = drawings[i];
-    if (d.type === 'hline') {
-      const yy = series.priceToCoordinate(d.price);
-      if (yy == null || !Number.isFinite(yy)) continue;
-      if (Math.abs(y - yy) <= HIT_PX) return d;
-      continue;
-    }
+  return hitTestDrawingDetailed(drawings, chart, series, x, y)?.drawing ?? null;
+}
 
-    const c = coordsForTwoPoint(chart, series, d.t1, d.p1, d.t2, d.p2);
-    if (!c) continue;
-
-    if (d.type === 'trend') {
-      if (distPointToSeg(x, y, c.x1, c.y1, c.x2, c.y2) <= HIT_PX) return d;
-    } else if (d.type === 'rect') {
-      if (hitRect(x, y, c.x1, c.y1, c.x2, c.y2)) return d;
-    } else if (d.type === 'fib') {
-      if (hitFib(x, y, c.x1, c.y1, c.x2, c.y2)) return d;
-    }
+/** Apply a drag delta (price / time) to a drawing given the grabbed handle. */
+export function applyDrawingDrag(
+  drawing: ChartDrawing,
+  handle: HandleId,
+  priceDelta: number,
+  timeDelta: number,
+): ChartDrawing {
+  if (drawing.type === 'hline') {
+    return { ...drawing, price: drawing.price + priceDelta };
   }
-  return null;
+
+  if (handle === 'p1') {
+    return {
+      ...drawing,
+      t1: drawing.t1 + timeDelta,
+      p1: drawing.p1 + priceDelta,
+    };
+  }
+  if (handle === 'p2') {
+    return {
+      ...drawing,
+      t2: drawing.t2 + timeDelta,
+      p2: drawing.p2 + priceDelta,
+    };
+  }
+  // body — translate both anchors
+  return {
+    ...drawing,
+    t1: drawing.t1 + timeDelta,
+    p1: drawing.p1 + priceDelta,
+    t2: drawing.t2 + timeDelta,
+    p2: drawing.p2 + priceDelta,
+  };
 }
 
 /** Screen position for the delete (X) control of a selected drawing. */
@@ -319,6 +414,30 @@ export function drawChartDrawings(
   }
 }
 
+function drawHandle(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  selected: boolean,
+  draft = false,
+): void {
+  const r = selected || draft ? 4 : 2.25;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = draft || selected ? LINE_SEL : LINE;
+  ctx.fill();
+  if (selected) {
+    ctx.strokeStyle = 'rgba(10,12,16,0.9)';
+    ctx.lineWidth = 1.25;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, r + 2.5, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(240,185,11,0.35)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
 function drawHLine(
   ctx: CanvasRenderingContext2D,
   series: ISeriesApi<'Candlestick'>,
@@ -333,7 +452,7 @@ function drawHLine(
   ctx.save();
   ctx.strokeStyle = selected ? LINE_SEL : LINE;
   ctx.globalAlpha = selected ? 1 : 0.9;
-  ctx.lineWidth = selected ? 1.25 : 1;
+  ctx.lineWidth = selected ? 1.35 : 1;
   ctx.setLineDash(selected ? [] : [5, 4]);
   ctx.beginPath();
   ctx.moveTo(0, y);
@@ -341,11 +460,16 @@ function drawHLine(
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // End cap
-  ctx.fillStyle = selected ? LINE_SEL : LINE;
-  ctx.beginPath();
-  ctx.arc(4, y, selected ? 2.5 : 2, 0, Math.PI * 2);
-  ctx.fill();
+  // Drag handles on the line when selected
+  if (selected) {
+    drawHandle(ctx, 14, y, true);
+    drawHandle(ctx, Math.max(28, plotW - 48), y, true);
+  } else {
+    ctx.fillStyle = LINE;
+    ctx.beginPath();
+    ctx.arc(4, y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   const label = formatDrawingPrice(price);
   ctx.font = '600 9px IBM Plex Mono, JetBrains Mono, monospace';
@@ -392,14 +516,8 @@ function drawTrend(
   ctx.stroke();
   ctx.setLineDash([]);
 
-  const r = selected || draft ? 3 : 2.25;
-  ctx.fillStyle = draft || selected ? LINE_SEL : LINE;
-  ctx.beginPath();
-  ctx.arc(x1, y1, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(x2, y2, r, 0, Math.PI * 2);
-  ctx.fill();
+  drawHandle(ctx, x1, y1, selected, draft);
+  drawHandle(ctx, x2, y2, selected, draft);
   ctx.restore();
 }
 
@@ -431,17 +549,14 @@ function drawRect(
   ctx.strokeRect(left + 0.5, top + 0.5, w - 1, h - 1);
   ctx.setLineDash([]);
 
-  const r = selected || draft ? 3 : 2.25;
-  ctx.fillStyle = draft || selected ? LINE_SEL : LINE;
+  // Corner handles — p1/p2 are the interactive anchors; show all 4 for polish
   for (const [cx, cy] of [
     [c.x1, c.y1],
     [c.x2, c.y2],
     [c.x1, c.y2],
     [c.x2, c.y1],
   ] as const) {
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fill();
+    drawHandle(ctx, cx, cy, selected, draft);
   }
   ctx.restore();
 }
@@ -469,13 +584,11 @@ function drawFib(
 
   ctx.save();
 
-  // Soft band fill across the full fib range.
   const top = Math.min(c.y1, c.y2);
   const bot = Math.max(c.y1, c.y2);
   ctx.fillStyle = draft || selected ? 'rgba(240,185,11,0.06)' : FIB_FILL;
   ctx.fillRect(left, top, span, Math.max(1, bot - top));
 
-  // Diagonal guide from anchor → end.
   ctx.strokeStyle = draft
     ? 'rgba(240,185,11,0.45)'
     : selected
@@ -520,7 +633,6 @@ function drawFib(
     const boxW = tw + padX * 2;
     const boxH = 13;
     const bx = right + 4;
-    // Keep labels on-screen when the fib is near the right edge.
     const plotW = chart.timeScale().width() || right + boxW + 8;
     const labelX = bx + boxW > plotW - 2 ? left - boxW - 4 : bx;
     const by = y - boxH / 2;
@@ -543,14 +655,8 @@ function drawFib(
     ctx.fillText(label, labelX + padX, by + 9.5);
   }
 
-  const r = selected || draft ? 3 : 2.25;
-  ctx.fillStyle = draft || selected ? LINE_SEL : LINE;
-  ctx.beginPath();
-  ctx.arc(c.x1, c.y1, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(c.x2, c.y2, r, 0, Math.PI * 2);
-  ctx.fill();
+  drawHandle(ctx, c.x1, c.y1, selected, draft);
+  drawHandle(ctx, c.x2, c.y2, selected, draft);
 
   ctx.restore();
 }
