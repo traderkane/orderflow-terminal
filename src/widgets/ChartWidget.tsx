@@ -12,6 +12,7 @@ import {
   type Time,
 } from 'lightweight-charts';
 import { useTerminalStore } from '../store/useTerminalStore';
+import type { HeatmapFrame } from '../types/market';
 
 const UP = '#0ecb81';
 const DOWN = '#f6465d';
@@ -19,22 +20,170 @@ const PANEL = '#0a0c10';
 const GRID = '#12161e';
 const TEXT = '#6b7280';
 
+function frameTimeSec(t: number): number {
+  // Live heatmap uses ms; mock uses unix seconds.
+  return t > 1e12 ? t / 1000 : t;
+}
+
 export function ChartWidget() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const vwapRef = useRef<ISeriesApi<'Line'> | null>(null);
   const cvdRef = useRef<ISeriesApi<'Line'> | null>(null);
   const markersRef = useRef<{ setMarkers: (m: SeriesMarker<Time>[]) => void } | null>(null);
+  const rafRef = useRef<number>(0);
+  const heatmapRef = useRef<HeatmapFrame[]>([]);
 
   const feed = useTerminalStore((s) => s.feed);
   const showVwap = useTerminalStore((s) => s.showVwap);
   const showCvdOverlay = useTerminalStore((s) => s.showCvdOverlay);
   const showLiqMarkers = useTerminalStore((s) => s.showLiqMarkers);
+  const showHeatmap = useTerminalStore((s) => s.showHeatmap);
   const setShowVwap = useTerminalStore((s) => s.setShowVwap);
   const setShowCvdOverlay = useTerminalStore((s) => s.setShowCvdOverlay);
   const setShowLiqMarkers = useTerminalStore((s) => s.setShowLiqMarkers);
+  const setShowHeatmap = useTerminalStore((s) => s.setShowHeatmap);
+
+  const drawHeatmap = () => {
+    const canvas = overlayRef.current;
+    const chart = chartRef.current;
+    const series = candleRef.current;
+    const parent = containerRef.current;
+    if (!canvas || !chart || !series || !parent) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = parent.clientWidth;
+    const h = parent.clientHeight;
+    const pw = Math.max(1, Math.floor(w * dpr));
+    const ph = Math.max(1, Math.floor(h * dpr));
+    if (canvas.width !== pw || canvas.height !== ph) {
+      canvas.width = pw;
+      canvas.height = ph;
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+    }
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    if (!showHeatmap) return;
+    const frames = heatmapRef.current;
+    if (!frames.length) return;
+
+    const recent = frames.slice(-120);
+    const timeScale = chart.timeScale();
+
+    // Prefer true time alignment; if frames collapse into a thin strip
+    // (sub-candle sampling), stretch them across the right plot area.
+    const xMapped: Array<number | null> = recent.map((f) =>
+      timeScale.timeToCoordinate(Math.floor(frameTimeSec(f.time)) as Time),
+    );
+    const validXs = xMapped.filter((x): x is number => x != null && Number.isFinite(x));
+    let useStretch = validXs.length < 2;
+    let x0 = 0;
+    let x1 = w;
+    if (!useStretch) {
+      x0 = Math.min(...validXs);
+      x1 = Math.max(...validXs);
+      if (x1 - x0 < w * 0.22) useStretch = true;
+    }
+
+    let peak = 0;
+    for (const frame of recent) {
+      const n = frame.prices.length;
+      for (let y = 0; y < n; y++) {
+        peak = Math.max(peak, frame.bids[y] ?? 0, frame.asks[y] ?? 0);
+      }
+    }
+    const invPeak = peak > 0 ? 1 / peak : 1;
+
+    // Right-side stretch window: leave room for older candles on the left.
+    const stretchLeft = w * 0.28;
+    const stretchRight = w - 8;
+    const stretchSpan = Math.max(1, stretchRight - stretchLeft);
+
+    for (let i = 0; i < recent.length; i++) {
+      const frame = recent[i];
+      let xLeft: number;
+      let xRight: number;
+
+      if (useStretch) {
+        xLeft = stretchLeft + (i / recent.length) * stretchSpan;
+        xRight = stretchLeft + ((i + 1) / recent.length) * stretchSpan;
+      } else {
+        const x = xMapped[i];
+        if (x == null || !Number.isFinite(x)) continue;
+        const prev = i > 0 ? xMapped[i - 1] : null;
+        const next = i + 1 < xMapped.length ? xMapped[i + 1] : null;
+        const leftGap =
+          prev != null && Number.isFinite(prev) ? (x - prev) / 2 : Math.max(2, (x1 - x0) / recent.length / 2);
+        const rightGap =
+          next != null && Number.isFinite(next) ? (next - x) / 2 : Math.max(2, (x1 - x0) / recent.length / 2);
+        xLeft = x - leftGap;
+        xRight = x + rightGap;
+      }
+
+      const cellW = Math.max(1, xRight - xLeft);
+      const levels = frame.prices.length;
+      if (levels < 2) continue;
+
+      for (let y = 0; y < levels; y++) {
+        const bid = frame.bids[y] ?? 0;
+        const ask = frame.asks[y] ?? 0;
+        const raw = Math.max(bid, ask) * invPeak;
+        if (raw < 0.03) continue;
+        const intensity = Math.min(1, Math.pow(raw, 0.55));
+        const price = frame.prices[y];
+        const yCoord = series.priceToCoordinate(price);
+        if (yCoord == null || !Number.isFinite(yCoord)) continue;
+
+        // Approximate cell height from neighboring buckets.
+        let yTop: number;
+        let yBot: number;
+        if (y + 1 < levels) {
+          const yNext = series.priceToCoordinate(frame.prices[y + 1]);
+          if (yNext == null) continue;
+          yTop = Math.min(yCoord, yNext);
+          yBot = Math.max(yCoord, yNext);
+        } else if (y > 0) {
+          const yPrev = series.priceToCoordinate(frame.prices[y - 1]);
+          if (yPrev == null) continue;
+          const half = Math.abs(yCoord - yPrev);
+          yTop = yCoord - half / 2;
+          yBot = yCoord + half / 2;
+        } else {
+          continue;
+        }
+
+        const cellH = Math.max(1, yBot - yTop);
+        const isBid = bid >= ask;
+        // Keep candles readable — soft overlay.
+        const alpha = 0.08 + intensity * 0.42;
+        ctx.fillStyle = isBid
+          ? `rgba(14, 203, 129, ${alpha})`
+          : `rgba(246, 70, 93, ${alpha})`;
+        ctx.fillRect(
+          Math.floor(xLeft),
+          Math.floor(yTop),
+          Math.ceil(cellW) + 1,
+          Math.ceil(cellH) + 1,
+        );
+      }
+    }
+  };
+
+  const scheduleHeatmap = () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0;
+      drawHeatmap();
+    });
+  };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -123,20 +272,29 @@ export function ChartWidget() {
     vwapRef.current = vwap;
     cvdRef.current = cvd;
 
+    const onRange = () => scheduleHeatmap();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
+    chart.timeScale().subscribeVisibleTimeRangeChange(onRange);
+
     const ro = new ResizeObserver(() => {
       if (!containerRef.current) return;
       chart.applyOptions({
         width: containerRef.current.clientWidth,
         height: containerRef.current.clientHeight,
       });
+      scheduleHeatmap();
     });
     ro.observe(containerRef.current);
 
     return () => {
       ro.disconnect();
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
+      chart.timeScale().unsubscribeVisibleTimeRangeChange(onRange);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
       chart.remove();
       chartRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -186,7 +344,7 @@ export function ChartWidget() {
     if (markersRef.current) {
       if (showLiqMarkers) {
         const markers: SeriesMarker<Time>[] = feed.liquidations.slice(0, 25).map((l) => ({
-          time: (Math.floor(l.time / 1000) as unknown as Time),
+          time: Math.floor(l.time / 1000) as unknown as Time,
           position: l.side === 'long' ? 'belowBar' : 'aboveBar',
           color: l.side === 'long' ? DOWN : UP,
           shape: l.side === 'long' ? 'arrowUp' : 'arrowDown',
@@ -201,16 +359,31 @@ export function ChartWidget() {
         markersRef.current.setMarkers([]);
       }
     }
+
+    heatmapRef.current = feed.heatmap ?? [];
+    scheduleHeatmap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feed, showVwap, showCvdOverlay, showLiqMarkers]);
+
+  useEffect(() => {
+    scheduleHeatmap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showHeatmap]);
 
   return (
     <div className="relative flex h-full flex-col">
       <div className="absolute left-1.5 top-1.5 z-10 flex overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
+        <Toggle label="Heatmap" on={showHeatmap} onClick={() => setShowHeatmap(!showHeatmap)} />
         <Toggle label="VWAP" on={showVwap} onClick={() => setShowVwap(!showVwap)} />
         <Toggle label="CVD" on={showCvdOverlay} onClick={() => setShowCvdOverlay(!showCvdOverlay)} />
         <Toggle label="Liqs" on={showLiqMarkers} onClick={() => setShowLiqMarkers(!showLiqMarkers)} />
       </div>
       <div ref={containerRef} className="h-full w-full" />
+      <canvas
+        ref={overlayRef}
+        className="pointer-events-none absolute inset-0 z-[1]"
+        aria-hidden
+      />
     </div>
   );
 }

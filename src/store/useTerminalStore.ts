@@ -73,6 +73,7 @@ interface TerminalState {
   showVwap: boolean;
   showCvdOverlay: boolean;
   showLiqMarkers: boolean;
+  showHeatmap: boolean;
   launcherOpen: boolean;
 
   initFeed: () => () => void;
@@ -88,6 +89,7 @@ interface TerminalState {
   setShowVwap: (v: boolean) => void;
   setShowCvdOverlay: (v: boolean) => void;
   setShowLiqMarkers: (v: boolean) => void;
+  setShowHeatmap: (v: boolean) => void;
   setLauncherOpen: (v: boolean) => void;
 }
 
@@ -169,6 +171,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     showVwap: true,
     showCvdOverlay: false,
     showLiqMarkers: true,
+    showHeatmap: true,
     launcherOpen: false,
 
     initFeed: () => {
@@ -264,6 +267,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     setShowVwap: (showVwap) => set({ showVwap }),
     setShowCvdOverlay: (showCvdOverlay) => set({ showCvdOverlay }),
     setShowLiqMarkers: (showLiqMarkers) => set({ showLiqMarkers }),
+    setShowHeatmap: (showHeatmap) => set({ showHeatmap }),
     setLauncherOpen: (launcherOpen) => set({ launcherOpen }),
   };
 });
@@ -272,8 +276,8 @@ export const WIDGET_META: Record<
   WidgetType,
   { title: string; description: string }
 > = {
-  chart: { title: 'Chart', description: 'Candles, volume, VWAP / CVD / liqs' },
-  orderbook: { title: 'Order Book', description: 'DOM bids/asks with depth' },
+  chart: { title: 'Chart', description: 'Candles, heatmap, VWAP / CVD / liqs' },
+  orderbook: { title: 'Order Book', description: 'DOM ladder with cumulative depth' },
   trades: { title: 'Trades Tape', description: 'Aggressor buy/sell tape' },
   heatmap: { title: 'Book Heatmap', description: 'Time × price liquidity' },
   cvd: { title: 'CVD / Delta', description: 'Cumulative volume delta' },

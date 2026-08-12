@@ -116,3 +116,28 @@ select {
 .depth-row {
   transition: background-color 80ms linear;
 }
+
+
+.dom-row {
+  cursor: default;
+  border-radius: 1px;
+}
+.dom-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+@keyframes dom-flash-buy {
+  0% { background-color: rgba(14, 203, 129, 0.42); }
+  100% { background-color: transparent; }
+}
+@keyframes dom-flash-sell {
+  0% { background-color: rgba(246, 70, 93, 0.42); }
+  100% { background-color: transparent; }
+}
+.dom-flash-buy {
+  animation: dom-flash-buy 0.4s ease-out;
+}
+.dom-flash-sell {
+  animation: dom-flash-sell 0.4s ease-out;
+}
