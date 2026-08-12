@@ -16,19 +16,27 @@ import {
 } from 'lightweight-charts';
 import {
   DRAWING_COLORS,
+  FIB_TOGGLE_LEVELS,
   LINE_WIDTHS,
+  MAGNET_PX,
+  activeFibLevels,
   applyDrawingDrag,
   defaultDrawingStyle,
   deleteControlAnchor,
   drawChartDrawings,
+  drawMagnetPreview,
+  drawingTypeLabel,
+  drawingTypeShort,
   formatDrawingPrice,
   getSymbolDrawings,
   hitTestDrawingDetailed,
+  isDrawingVisible,
   isPlaceTool,
   isSelectTool,
   loadDrawings,
   magnetSnap,
   newDrawingId,
+  normalizeFibLevels,
   saveDrawings,
   setSymbolDrawings,
   withDrawingDefaults,
@@ -174,6 +182,7 @@ export function ChartWidget() {
   const [hoverCursor, setHoverCursor] = useState<HoverCursor>('default');
   const [priceEdit, setPriceEdit] = useState<{ id: string; value: string } | null>(null);
   const [magnetOn, setMagnetOn] = useState(true);
+  const [objectTreeOpen, setObjectTreeOpen] = useState(false);
   const [vwapMenuOpen, setVwapMenuOpen] = useState(false);
   const [barStatsMenuOpen, setBarStatsMenuOpen] = useState(false);
   const [layersMenuOpen, setLayersMenuOpen] = useState(false);
@@ -197,6 +206,11 @@ export function ChartWidget() {
   const suppressClickRef = useRef(false);
   const symbolRef = useRef(useTerminalStore.getState().symbol);
   const magnetRef = useRef(true);
+  const magnetPreviewRef = useRef<{
+    x: number;
+    y: number;
+    snapped: boolean;
+  } | null>(null);
   const candlesRef = useRef<Candle[]>([]);
   const hoverPriceLineRef = useRef<IPriceLine | null>(null);
   const focusPriceLineRef = useRef<IPriceLine | null>(null);
@@ -312,6 +326,56 @@ export function ChartWidget() {
     const series = candleRef.current;
     if (!chart || !series) return { price, time };
     return magnetSnap(chart, series, candlesRef.current, x, y, price, time);
+  };
+
+  const updateMagnetPreview = (
+    x: number,
+    y: number,
+    price: number,
+    time: number,
+  ) => {
+    if (!magnetRef.current) {
+      if (magnetPreviewRef.current) {
+        magnetPreviewRef.current = null;
+        scheduleOverlays();
+      }
+      return;
+    }
+    const chart = chartRef.current;
+    const series = candleRef.current;
+    if (!chart || !series) return;
+    const snapped = magnetSnap(
+      chart,
+      series,
+      candlesRef.current,
+      x,
+      y,
+      price,
+      time,
+      MAGNET_PX,
+    );
+    const didSnap = snapped.price !== price || snapped.time !== time;
+    let sx = x;
+    let sy = y;
+    if (didSnap) {
+      const cx = chart.timeScale().timeToCoordinate(Math.floor(snapped.time) as Time);
+      const cy = series.priceToCoordinate(snapped.price);
+      if (cx != null && cy != null && Number.isFinite(cx) && Number.isFinite(cy)) {
+        sx = cx;
+        sy = cy;
+      }
+    }
+    const prev = magnetPreviewRef.current;
+    if (
+      prev &&
+      Math.abs(prev.x - sx) < 0.5 &&
+      Math.abs(prev.y - sy) < 0.5 &&
+      prev.snapped === didSnap
+    ) {
+      return;
+    }
+    magnetPreviewRef.current = { x: sx, y: sy, snapped: didSnap };
+    scheduleOverlays();
   };
 
   const drawHeatmapLayer = (
@@ -1096,6 +1160,10 @@ export function ChartWidget() {
       selectedIdRef.current,
       draftRef.current,
     );
+    const mag = magnetPreviewRef.current;
+    if (mag && magnetRef.current) {
+      drawMagnetPreview(ctx, mag.x, mag.y, mag.snapped, MAGNET_PX);
+    }
     updateDeletePos();
   };
 
@@ -1291,6 +1359,30 @@ export function ChartWidget() {
         return;
       }
 
+      if (active === 'hray') {
+        let tSec: number | null = tHint;
+        if (tSec == null || !Number.isFinite(tSec)) {
+          const timeVal = chart.timeScale().coordinateToTime(x);
+          if (typeof timeVal === 'number') tSec = timeVal;
+          else if (typeof param.time === 'number') tSec = param.time;
+        }
+        if (tSec == null || !Number.isFinite(tSec)) return;
+        const next: ChartDrawing[] = [
+          ...drawingsRef.current,
+          withDrawingDefaults({
+            id: newDrawingId(),
+            type: 'hray',
+            price: priceN,
+            t1: tSec,
+            ...defaultDrawingStyle(),
+          }),
+        ];
+        setSelectedId(null);
+        selectedIdRef.current = null;
+        persistDrawings(next);
+        return;
+      }
+
       if (active === 'trend' || active === 'rect' || active === 'fib') {
         let tSec: number | null = tHint;
         if (tSec == null || !Number.isFinite(tSec)) {
@@ -1391,9 +1483,43 @@ export function ChartWidget() {
                 tSec,
               );
               draftRef.current = { ...draft, t2: snapped.time, p2: snapped.price };
+              updateMagnetPreview(
+                param.point.x,
+                param.point.y,
+                Number(price),
+                tSec,
+              );
               scheduleOverlays();
             }
           }
+        }
+      } else if (
+        param.point &&
+        magnetRef.current &&
+        (isPlaceTool(toolRef.current) || dragRef.current)
+      ) {
+        const seriesMag = candleRef.current;
+        if (seriesMag) {
+          const raw = seriesMag.coordinateToPrice(param.point.y);
+          if (raw != null && Number.isFinite(Number(raw))) {
+            let tSec: number | null = null;
+            const timeVal = chart.timeScale().coordinateToTime(param.point.x);
+            if (typeof timeVal === 'number') tSec = timeVal;
+            else if (typeof param.time === 'number') tSec = param.time;
+            if (tSec != null) {
+              updateMagnetPreview(
+                param.point.x,
+                param.point.y,
+                Number(raw),
+                tSec,
+              );
+            }
+          }
+        }
+      } else if (!param.point || !magnetRef.current) {
+        if (magnetPreviewRef.current) {
+          magnetPreviewRef.current = null;
+          scheduleOverlays();
         }
       }
 
@@ -1500,8 +1626,11 @@ export function ChartWidget() {
 
       const next = drawingsRef.current.map((d) => {
         if (d.id !== drag.id) return d;
-        // Horizontals only move in price
+        // Full horizontals only move in price; rays can slide anchor in time on p1
         if (d.type === 'hline') {
+          return applyDrawingDrag(d, 'body', priceDelta, 0);
+        }
+        if (d.type === 'hray' && drag.handle === 'body') {
           return applyDrawingDrag(d, 'body', priceDelta, 0);
         }
         return applyDrawingDrag(d, drag.handle, priceDelta, timeDelta);
@@ -1513,6 +1642,7 @@ export function ChartWidget() {
         lastPrice: snapped.price,
         lastTime: snapped.time,
       };
+      updateMagnetPreview(pt.x, pt.y, pt.price, pt.time);
       scheduleOverlays();
     };
 
@@ -1547,7 +1677,12 @@ export function ChartWidget() {
         pt.y,
         selectedIdRef.current,
       );
-      if (!hit || hit.drawing.type !== 'hline') return;
+      if (
+        !hit ||
+        (hit.drawing.type !== 'hline' && hit.drawing.type !== 'hray')
+      ) {
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       selectedIdRef.current = hit.drawing.id;
@@ -1808,14 +1943,25 @@ export function ChartWidget() {
   ]);
 
   useEffect(() => {
-    if (!vwapMenuOpen && !barStatsMenuOpen && !layersMenuOpen && !heatmapMenuOpen) return;
+    if (
+      !vwapMenuOpen &&
+      !barStatsMenuOpen &&
+      !layersMenuOpen &&
+      !heatmapMenuOpen &&
+      !objectTreeOpen
+    ) {
+      return;
+    }
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null;
       if (t?.closest('[data-layer-menus]')) return;
+      if (t?.closest('[data-object-tree]')) return;
+      if (t?.closest('.chart-draw-rail')) return;
       setVwapMenuOpen(false);
       setBarStatsMenuOpen(false);
       setLayersMenuOpen(false);
       setHeatmapMenuOpen(false);
+      setObjectTreeOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -1825,6 +1971,7 @@ export function ChartWidget() {
         setBarStatsMenuOpen(false);
         setLayersMenuOpen(false);
         setHeatmapMenuOpen(false);
+        setObjectTreeOpen(false);
       }
     };
     window.addEventListener('mousedown', onDown);
@@ -1833,7 +1980,7 @@ export function ChartWidget() {
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('keydown', onKey, true);
     };
-  }, [vwapMenuOpen, barStatsMenuOpen, layersMenuOpen, heatmapMenuOpen]);
+  }, [vwapMenuOpen, barStatsMenuOpen, layersMenuOpen, heatmapMenuOpen, objectTreeOpen]);
 
   useEffect(() => {
     scheduleOverlays();
@@ -1970,7 +2117,9 @@ export function ChartWidget() {
       return;
     }
     const next = drawingsRef.current.map((d) =>
-      d.id === priceEdit.id && d.type === 'hline' ? { ...d, price: parsed } : d,
+      d.id === priceEdit.id && (d.type === 'hline' || d.type === 'hray')
+        ? { ...d, price: parsed }
+        : d,
     );
     setPriceEdit(null);
     persistDrawings(next);
@@ -1990,21 +2139,27 @@ export function ChartWidget() {
   const toolHint =
     tool === 'hline'
       ? 'Click to place horizontal'
-      : tool === 'trend'
-        ? 'Trend — click start, then end · Esc select'
-        : tool === 'rect'
-          ? 'Rect — click opposite corners · Esc select'
-          : tool === 'fib'
-            ? 'Fib — click 0, then 1 · Esc select'
-            : tool === 'eraser'
-              ? 'Click a drawing to erase · Esc select'
-              : null;
+      : tool === 'hray'
+        ? 'Click to place horizontal ray →'
+        : tool === 'trend'
+          ? 'Trend — click start, then end · Esc select'
+          : tool === 'rect'
+            ? 'Rect — click opposite corners · Esc select'
+            : tool === 'fib'
+              ? 'Fib — click 0, then 1 · Esc select'
+              : tool === 'eraser'
+                ? 'Click a drawing to erase · Esc select'
+                : null;
 
   const selectedDrawing = selectedId
     ? drawings.find((d) => d.id === selectedId) ?? null
     : null;
   const showExtend =
     selectedDrawing?.type === 'hline' || selectedDrawing?.type === 'trend';
+  const showFibProps = selectedDrawing?.type === 'fib';
+  const selectedVisible = selectedDrawing
+    ? isDrawingVisible(selectedDrawing)
+    : true;
 
   const layersExtraCount =
     (showProfile ? 1 : 0) +
@@ -2032,6 +2187,13 @@ export function ChartWidget() {
           <IconHLine />
         </ToolIcon>
         <ToolIcon
+          title="Horizontal ray — extends right"
+          active={tool === 'hray'}
+          onClick={() => selectTool('hray')}
+        >
+          <IconHRay />
+        </ToolIcon>
+        <ToolIcon
           title="Trend line — two clicks"
           active={tool === 'trend'}
           onClick={() => selectTool('trend')}
@@ -2056,7 +2218,15 @@ export function ChartWidget() {
         <ToolIcon
           title={magnetOn ? 'Magnet snap on' : 'Magnet snap off'}
           active={magnetOn}
-          onClick={() => setMagnetOn((v) => !v)}
+          onClick={() => {
+            setMagnetOn((v) => {
+              const next = !v;
+              magnetRef.current = next;
+              if (!next) magnetPreviewRef.current = null;
+              return next;
+            });
+            scheduleOverlays();
+          }}
         >
           <IconMagnet />
         </ToolIcon>
@@ -2071,9 +2241,129 @@ export function ChartWidget() {
         <ToolIcon title="Clear all drawings" active={false} danger onClick={clearAllDrawings}>
           <IconClear />
         </ToolIcon>
+        <div className="my-0.5 h-px w-5 bg-terminal-border" />
+        <ToolIcon
+          title="Object tree — drawings"
+          active={objectTreeOpen}
+          onClick={() => {
+            setObjectTreeOpen((v) => !v);
+            setVwapMenuOpen(false);
+            setBarStatsMenuOpen(false);
+            setLayersMenuOpen(false);
+            setHeatmapMenuOpen(false);
+          }}
+        >
+          <IconObjectTree />
+        </ToolIcon>
       </aside>
 
       <div className="relative min-h-0 min-w-0 flex-1">
+        {objectTreeOpen && (
+          <div
+            data-object-tree
+            className="pointer-events-auto absolute left-1.5 top-9 z-[8] w-[200px] rounded-[2px] border border-terminal-border bg-black/92 p-1 shadow-panel backdrop-blur-[2px]"
+          >
+            <div className="flex items-center gap-1.5 px-1.5 pb-1 pt-0.5">
+              <IconObjectTree />
+              <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">
+                Objects
+              </span>
+              <span className="ml-auto font-mono text-[9px] text-zinc-600">
+                {drawings.length}
+              </span>
+            </div>
+            {drawings.length === 0 ? (
+              <div className="px-1.5 py-2 font-mono text-[10px] text-zinc-600">
+                No drawings
+              </div>
+            ) : (
+              <div className="max-h-[220px] overflow-y-auto">
+                {[...drawings].reverse().map((d) => {
+                  const on = d.id === selectedId;
+                  const vis = isDrawingVisible(d);
+                  const summary =
+                    d.type === 'hline' || d.type === 'hray'
+                      ? formatDrawingPrice(d.price)
+                      : d.type === 'fib'
+                        ? `${activeFibLevels(d).length} lvl`
+                        : drawingTypeLabel(d);
+                  return (
+                    <div
+                      key={d.id}
+                      className={`mb-0.5 flex items-center gap-0.5 rounded-[2px] ${
+                        on ? 'bg-accent/15 ring-1 ring-inset ring-accent/35' : 'hover:bg-white/[0.04]'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        title={`Select ${drawingTypeLabel(d)}`}
+                        onClick={() => {
+                          selectedIdRef.current = d.id;
+                          setSelectedId(d.id);
+                          setTool('select');
+                          toolRef.current = 'select';
+                          scheduleOverlays();
+                        }}
+                        className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1 text-left"
+                      >
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{ background: d.color, opacity: vis ? 1 : 0.35 }}
+                        />
+                        <span
+                          className={`shrink-0 font-mono text-[9px] uppercase tracking-wider ${
+                            on ? 'text-accent' : 'text-zinc-400'
+                          }`}
+                        >
+                          {drawingTypeShort(d)}
+                        </span>
+                        <span
+                          className={`truncate font-mono text-[10px] ${
+                            vis ? 'text-zinc-300' : 'text-zinc-600 line-through'
+                          }`}
+                        >
+                          {summary}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        title={vis ? 'Hide' : 'Show'}
+                        onClick={() => {
+                          const next = drawingsRef.current.map((x) =>
+                            x.id === d.id
+                              ? withDrawingDefaults({ ...x, visible: !vis })
+                              : x,
+                          );
+                          persistDrawings(next);
+                        }}
+                        className={`flex h-5 w-5 items-center justify-center rounded-[2px] ${
+                          vis ? 'text-accent' : 'text-zinc-600'
+                        }`}
+                      >
+                        <IconEye open={vis} />
+                      </button>
+                      <button
+                        type="button"
+                        title="Delete"
+                        onClick={() => {
+                          const next = drawingsRef.current.filter((x) => x.id !== d.id);
+                          if (selectedIdRef.current === d.id) {
+                            selectedIdRef.current = null;
+                            setSelectedId(null);
+                          }
+                          persistDrawings(next);
+                        }}
+                        className="flex h-5 w-5 items-center justify-center rounded-[2px] text-zinc-600 hover:text-down"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
         {/* Mode + TF pills — compact, top-left of chart content */}
         <div className="pointer-events-none absolute left-1.5 top-1.5 z-10 flex items-center gap-1">
           <div className="pointer-events-auto flex h-6 overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
@@ -2573,7 +2863,71 @@ export function ChartWidget() {
                 </div>
               </>
             )}
+            {showFibProps && selectedDrawing.type === 'fib' && (
+              <>
+                <div className="h-3.5 w-px bg-terminal-border" />
+                <button
+                  type="button"
+                  title="Extend fib levels right"
+                  onClick={() =>
+                    patchSelected({
+                      extendRight: !selectedDrawing.extendRight,
+                    } as Partial<ChartDrawing>)
+                  }
+                  className={`flex h-5 min-w-[22px] items-center justify-center rounded-[2px] px-1 font-mono text-[9px] uppercase ${
+                    selectedDrawing.extendRight
+                      ? 'bg-accent/20 text-accent'
+                      : 'text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200'
+                  }`}
+                >
+                  →
+                </button>
+                <div className="flex items-center gap-0.5">
+                  {FIB_TOGGLE_LEVELS.map((lvl) => {
+                    const on = activeFibLevels(selectedDrawing).includes(lvl);
+                    const chip =
+                      lvl === 0.5 ? '50' : String(Math.round(lvl * 1000));
+                    return (
+                      <button
+                        key={lvl}
+                        type="button"
+                        title={`Fib ${lvl} ${on ? 'on' : 'off'}`}
+                        onClick={() => {
+                          const cur = new Set(activeFibLevels(selectedDrawing));
+                          if (on) cur.delete(lvl);
+                          else cur.add(lvl);
+                          patchSelected({
+                            levels: normalizeFibLevels([...cur]),
+                          } as Partial<ChartDrawing>);
+                        }}
+                        className={`flex h-5 min-w-[22px] items-center justify-center rounded-[2px] px-0.5 font-mono text-[8px] ${
+                          on
+                            ? 'bg-accent/20 text-accent'
+                            : 'text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-300'
+                        }`}
+                      >
+                        {chip}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
             <div className="h-3.5 w-px bg-terminal-border" />
+            <button
+              type="button"
+              title={selectedVisible ? 'Hide drawing' : 'Show drawing'}
+              onClick={() =>
+                patchSelected({ visible: !selectedVisible } as Partial<ChartDrawing>)
+              }
+              className={`flex h-5 items-center justify-center rounded-[2px] px-1 ${
+                selectedVisible
+                  ? 'text-accent hover:bg-accent/10'
+                  : 'text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-300'
+              }`}
+            >
+              <IconEye open={selectedVisible} />
+            </button>
             <button
               type="button"
               title="Delete drawing"
@@ -2881,6 +3235,16 @@ function IconHLine() {
   );
 }
 
+function IconHRay() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <path d="M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="3" cy="7" r="1.35" fill="currentColor" />
+      <path d="M11 4.8L13 7l-2 2.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function IconTrend() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
@@ -2940,6 +3304,40 @@ function IconClear() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
       <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconObjectTree() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <path d="M3 3.5h8M3 7h8M3 10.5h5.5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+      <circle cx="11.2" cy="10.5" r="1.15" fill="currentColor" />
+    </svg>
+  );
+}
+
+function IconEye({ open }: { open: boolean }) {
+  if (!open) {
+    return (
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+        <path
+          d="M1.5 6s1.8-3 4.5-3 4.5 3 4.5 3-1.8 3-4.5 3-4.5-3-4.5-3z"
+          stroke="currentColor"
+          strokeWidth="1.2"
+        />
+        <path d="M2 10L10 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+      <path
+        d="M1.5 6s1.8-3 4.5-3 4.5 3 4.5 3-1.8 3-4.5 3-4.5-3-4.5-3z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+      <circle cx="6" cy="6" r="1.35" fill="currentColor" />
     </svg>
   );
 }
