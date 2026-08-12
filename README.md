@@ -106,7 +106,7 @@ Toolbar on the chart: **Candles | Footprint** mode (stored as `flow-terminal-cha
 
 ## Alerts
 
-Top bar **Alerts** opens a drawer to create / list / delete alerts (persisted in `localStorage`).
+App rail **Alerts** opens a right slide-over to create / list / delete alerts (persisted in `localStorage`).
 
 - Conditions: **price above / below** (primary), plus optional **funding** and **OI** crosses
 - Evaluated on each feed tick against live `stats.last` (and funding / OI)
@@ -118,7 +118,7 @@ Top bar **Alerts** opens a drawer to create / list / delete alerts (persisted in
 - Drag widgets from the header handle; resize from corners
 - Layout + widget set persist in `localStorage`
 - **Layout tabs** under the top bar: quick-switch **Scalp / Profile / Default** (+ user-saved templates); optional **+** saves current as a new tab
-- **Layouts** drawer: save current grid as a named template, load / delete user templates
+- **Layouts** drawer (app rail): slide-over matching layout-tab language — save current grid, load Scalp/Profile/Default or user tabs
 - Built-in presets: **Scalp** (chart + DOM + tape), **Profile** (chart + TPO + VPVR + footprint)
 - **Reset layout** restores the chart-dominant pro workspace
 - **+ Widget** launcher adds another panel instance

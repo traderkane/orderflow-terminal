@@ -232,6 +232,19 @@ select {
 }
 
 
+/* Side drawers — slide-over panels beside AppRail (not modal dialogs) */
+.side-drawer-scrim {
+  transition: opacity 160ms ease;
+}
+.side-drawer-panel {
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+html[data-theme="light"] .side-drawer-panel {
+  background: #f0f2f5 !important;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.08);
+}
+
 /* App rail — MMT V5-style slim left chrome (~40px) */
 .app-rail {
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
