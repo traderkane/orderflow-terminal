@@ -1,7 +1,7 @@
 import type { BookLevel, OrderBook } from '../../types/market';
 import type { VenueDepth, VenueLevel } from './types';
 
-const BOOK_LEVELS = 22;
+const BOOK_LEVELS = 48;
 
 function accumulate(
   sides: VenueLevel[][],
