@@ -56,8 +56,8 @@ import {
   persistChartLayers,
 } from '../lib/chartLayers';
 
-const LAYOUT_KEY = 'flow-terminal-layout-v6';
-const WIDGETS_KEY = 'flow-terminal-widgets-v6';
+const LAYOUT_KEY = 'flow-terminal-layout-v7';
+const WIDGETS_KEY = 'flow-terminal-widgets-v7';
 const FEED_MODE_KEY = 'flow-terminal-feed-mode';
 const ALERTS_KEY = 'flow-terminal-alerts-v1';
 const ALERT_HISTORY_KEY = 'flow-terminal-alert-history-v1';
@@ -84,13 +84,13 @@ const DEFAULT_WIDGETS: WidgetInstance[] = [
 ];
 
 const DEFAULT_LAYOUT: LayoutItem[] = [
-  { i: 'chart', x: 0, y: 0, w: 8, h: 18, minW: 5, minH: 8 },
-  { i: 'orderbook', x: 8, y: 0, w: 2, h: 18, minW: 2, minH: 6 },
-  { i: 'trades', x: 10, y: 0, w: 2, h: 18, minW: 2, minH: 6 },
-  { i: 'heatmap', x: 0, y: 18, w: 4, h: 5, minW: 3, minH: 4 },
-  { i: 'cvd', x: 4, y: 18, w: 3, h: 5, minW: 2, minH: 4 },
-  { i: 'liquidations', x: 7, y: 18, w: 3, h: 5, minW: 2, minH: 3 },
-  { i: 'stats', x: 10, y: 18, w: 2, h: 5, minW: 2, minH: 2 },
+  { i: 'chart', x: 0, y: 0, w: 8, h: 22, minW: 5, minH: 8 },
+  { i: 'orderbook', x: 8, y: 0, w: 2, h: 22, minW: 2, minH: 6 },
+  { i: 'trades', x: 10, y: 0, w: 2, h: 22, minW: 2, minH: 6 },
+  { i: 'heatmap', x: 0, y: 22, w: 4, h: 6, minW: 3, minH: 4 },
+  { i: 'cvd', x: 4, y: 22, w: 3, h: 6, minW: 2, minH: 4 },
+  { i: 'liquidations', x: 7, y: 22, w: 3, h: 6, minW: 2, minH: 3 },
+  { i: 'stats', x: 10, y: 22, w: 2, h: 6, minW: 2, minH: 2 },
 ];
 
 function loadJson<T>(key: string, fallback: T): T {

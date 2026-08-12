@@ -11,14 +11,15 @@ const SCALP_WIDGETS: WidgetInstance[] = [
   { id: 'stats', type: 'stats' },
 ];
 
+/** 28-row design grid — fills typical 900–1080p workspace via dynamic rowHeight. */
 const SCALP_LAYOUT: LayoutItem[] = [
-  { i: 'chart', x: 0, y: 0, w: 8, h: 18, minW: 5, minH: 8 },
-  { i: 'orderbook', x: 8, y: 0, w: 2, h: 18, minW: 2, minH: 6 },
-  { i: 'trades', x: 10, y: 0, w: 2, h: 18, minW: 2, minH: 6 },
-  { i: 'heatmap', x: 0, y: 18, w: 4, h: 5, minW: 3, minH: 4 },
-  { i: 'cvd', x: 4, y: 18, w: 3, h: 5, minW: 2, minH: 4 },
-  { i: 'liquidations', x: 7, y: 18, w: 3, h: 5, minW: 2, minH: 3 },
-  { i: 'stats', x: 10, y: 18, w: 2, h: 5, minW: 2, minH: 2 },
+  { i: 'chart', x: 0, y: 0, w: 8, h: 22, minW: 5, minH: 8 },
+  { i: 'orderbook', x: 8, y: 0, w: 2, h: 22, minW: 2, minH: 6 },
+  { i: 'trades', x: 10, y: 0, w: 2, h: 22, minW: 2, minH: 6 },
+  { i: 'heatmap', x: 0, y: 22, w: 4, h: 6, minW: 3, minH: 4 },
+  { i: 'cvd', x: 4, y: 22, w: 3, h: 6, minW: 2, minH: 4 },
+  { i: 'liquidations', x: 7, y: 22, w: 3, h: 6, minW: 2, minH: 3 },
+  { i: 'stats', x: 10, y: 22, w: 2, h: 6, minW: 2, minH: 2 },
 ];
 
 const PROFILE_WIDGETS: WidgetInstance[] = [
@@ -30,11 +31,11 @@ const PROFILE_WIDGETS: WidgetInstance[] = [
 ];
 
 const PROFILE_LAYOUT: LayoutItem[] = [
-  { i: 'chart', x: 0, y: 0, w: 6, h: 14, minW: 4, minH: 7 },
-  { i: 'footprint', x: 6, y: 0, w: 3, h: 14, minW: 3, minH: 6 },
-  { i: 'volumeProfile', x: 9, y: 0, w: 3, h: 14, minW: 2, minH: 5 },
-  { i: 'tpo', x: 0, y: 14, w: 9, h: 8, minW: 4, minH: 5 },
-  { i: 'stats', x: 9, y: 14, w: 3, h: 8, minW: 2, minH: 2 },
+  { i: 'chart', x: 0, y: 0, w: 6, h: 18, minW: 4, minH: 7 },
+  { i: 'footprint', x: 6, y: 0, w: 3, h: 18, minW: 3, minH: 6 },
+  { i: 'volumeProfile', x: 9, y: 0, w: 3, h: 18, minW: 2, minH: 5 },
+  { i: 'tpo', x: 0, y: 18, w: 9, h: 10, minW: 4, minH: 5 },
+  { i: 'stats', x: 9, y: 18, w: 3, h: 10, minW: 2, minH: 2 },
 ];
 
 export const BUILTIN_TEMPLATES: LayoutTemplate[] = [

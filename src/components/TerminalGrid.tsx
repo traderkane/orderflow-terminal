@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type RefObject } from 'react';
+import { useEffect, useMemo, useState, type RefObject } from 'react';
 import GridLayout, { useContainerWidth } from 'react-grid-layout';
 import { useTerminalStore, WIDGET_META } from '../store/useTerminalStore';
 import { WidgetShell } from './WidgetShell';
@@ -16,6 +16,30 @@ import { StatsWidget } from '../widgets/StatsWidget';
 import type { LayoutItem, WidgetType } from '../types/market';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
+
+const GRID_COLS = 12;
+const GRID_MARGIN: [number, number] = [1, 1];
+const GRID_PADDING: [number, number] = [1, 1];
+/** Floor so dense custom layouts still scroll instead of crushing panels. */
+const MIN_ROW_HEIGHT = 18;
+
+function layoutRows(layout: LayoutItem[]): number {
+  let max = 0;
+  for (const item of layout) {
+    max = Math.max(max, item.y + item.h);
+  }
+  return max || 1;
+}
+
+/** Size rowHeight so the current layout bottom maps to the workspace height. */
+function rowHeightForContainer(containerHeight: number, rows: number): number {
+  if (containerHeight <= 0) return 28;
+  const marginY = GRID_MARGIN[1];
+  const padY = GRID_PADDING[1];
+  // RGL: height = rows * rowHeight + (rows - 1) * marginY + 2 * padY
+  const usable = containerHeight - (rows - 1) * marginY - padY * 2;
+  return Math.max(MIN_ROW_HEIGHT, Math.floor(usable / rows));
+}
 
 function renderWidget(type: WidgetType) {
   switch (type) {
@@ -79,7 +103,24 @@ export function TerminalGrid() {
   const chartMaximized = useTerminalStore((s) => s.chartMaximized);
   const setChartMaximized = useTerminalStore((s) => s.setChartMaximized);
   const { width, containerRef, mounted } = useContainerWidth();
+  const [containerHeight, setContainerHeight] = useState(0);
   const byId = useMemo(() => new Map(widgets.map((w) => [w.id, w])), [widgets]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const apply = () => setContainerHeight(el.clientHeight);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [containerRef]);
+
+  const rows = useMemo(() => layoutRows(layout), [layout]);
+  const rowHeight = useMemo(
+    () => rowHeightForContainer(containerHeight, rows),
+    [containerHeight, rows],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -113,16 +154,21 @@ export function TerminalGrid() {
     <div
       ref={containerRef as RefObject<HTMLDivElement>}
       tabIndex={-1}
-      className={`min-h-0 flex-1 overflow-auto terminal-workspace outline-none ${
+      className={`terminal-workspace flex min-h-0 flex-1 flex-col overflow-auto outline-none ${
         chartMaximized ? 'grid-chart-maximized' : ''
       }`}
     >
       {mounted && (
         <GridLayout
-          className="layout"
+          className="layout min-h-full w-full flex-1"
           width={width}
           layout={layout}
-          gridConfig={{ cols: 12, rowHeight: 28, margin: [1, 1], containerPadding: [1, 1] }}
+          gridConfig={{
+            cols: GRID_COLS,
+            rowHeight,
+            margin: GRID_MARGIN,
+            containerPadding: GRID_PADDING,
+          }}
           dragConfig={{ enabled: !chartMaximized, handle: '.drag-handle' }}
           resizeConfig={{ enabled: !chartMaximized }}
           onLayoutChange={(next) => {

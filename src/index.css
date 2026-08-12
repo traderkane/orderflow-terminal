@@ -90,6 +90,12 @@ select {
   background:
     linear-gradient(180deg, #06080c 0%, #050608 48px, #050608 100%);
 }
+/* Fill available height under chrome; RGL rowHeight is sized to match. */
+.terminal-workspace > .layout {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 100%;
+}
 
 .layout-tabs {
   scrollbar-width: thin;
