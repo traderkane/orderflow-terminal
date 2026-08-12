@@ -33,7 +33,7 @@ npm run preview
 
 ## Widgets
 
-1. **Chart** — TradingView/MMT-style workspace: **Candles | Footprint** mode switch; left icon drawing rail (select / H-Line / Trend / Rect / Fib / Magnet / Eraser / Clear), bottom layer dock, TF pills **1m / 5m / 15m / 1h**; Footprint mode paints clustered sell|buy volumes inside each bar with delta tint + imbalance outlines (best at 1m; denser/compact on higher TFs); selected-drawing properties mini-panel (color / width / extend L-R / delete); magnet snap to candle OHLC+mid; maximize chart from header (**F** / Esc); drag-to-move drawings with handles; layers Heatmap / VPVR / Bubbles / **session VWAP** (Day/Week/24h anchors, multi-plot) / **Bars** (volume|delta intensity) / CVD / Liqs; drawings (+styles) persisted per symbol
+1. **Chart** — TradingView/MMT-style workspace: **Candles | Footprint** mode switch; left icon drawing rail (select / H-Line / Trend / Rect / Fib / Magnet / Eraser / Clear), bottom layer dock, TF pills **1m / 5m / 15m / 1h**; Footprint mode paints clustered sell|buy volumes inside each bar with delta tint + imbalance outlines (best at 1m; denser/compact on higher TFs); selected-drawing properties mini-panel (color / width / extend L-R / delete); magnet snap to candle OHLC+mid; maximize chart from header (**F** / Esc); drag-to-move drawings with handles; layers Heatmap / VPVR / Bubbles / **session VWAP** (Day/Week/24h anchors, multi-plot) / **Bars** (volume|delta intensity) / **Count** (buy vs sell trade-count dual histogram) / CVD / Liqs; drawings (+styles) persisted per symbol
 2. **Order Book / DOM** — bids/asks, depth bars, spread
 3. **Trades Tape** — scrolling aggressor buys/sells with size highlighting
 4. **Order Book Heatmap** — canvas time × price liquidity
@@ -83,6 +83,7 @@ Chart layer dock:
   - **Rolling 24h** — trailing 24h window (dotted cyan)
   - Day + Week can plot together. History is capped by the rolling candle buffer (~240 bars), so Week/24h on low TFs only cover the available window.
 - **Bars** — MMT-style bar-stats lite: grades candle body/wick intensity by **Volume** or **Delta** vs a 20-bar trailing average (persisted `flow-terminal-bar-stats-v1` / `…-metric-v1`). Direction stays green/red; brightness encodes relative size. Disabled visually in Footprint mode so clusters stay readable.
+- **Count** — MMT-style trade counter: switches the bottom volume pane between **Volume** (default) and a dual histogram of per-candle **buy vs sell trade counts** (green up / red down). Counts accumulate from aggressor trades at the active chart TF (`flow-terminal-volume-pane-v1`). REST/synthetic history is volume-estimated until live ticks replace the current bar.
 
 ## Chart timeframes & modes
 

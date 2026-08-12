@@ -219,3 +219,12 @@ export interface ToastItem {
   body: string;
   createdAt: number;
 }
+
+/** Per-candle aggressor trade counts (pace of executions). */
+export interface TradeCountPoint {
+  time: number;
+  buyCount: number;
+  sellCount: number;
+  /** True when seeded from candle volume (no tick tape). */
+  estimated?: boolean;
+}

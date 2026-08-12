@@ -46,6 +46,11 @@ import {
   persistShowBarStats,
   type BarStatsMetric,
 } from '../lib/barStats';
+import {
+  loadVolumePaneMode,
+  persistVolumePaneMode,
+  type VolumePaneMode,
+} from '../lib/tradeCount';
 
 const LAYOUT_KEY = 'flow-terminal-layout-v6';
 const WIDGETS_KEY = 'flow-terminal-widgets-v6';
@@ -114,6 +119,7 @@ interface TerminalState {
   vwapAnchors: VwapAnchor[];
   showBarStats: boolean;
   barStatsMetric: BarStatsMetric;
+  volumePaneMode: VolumePaneMode;
   showCvdOverlay: boolean;
   showLiqMarkers: boolean;
   showHeatmap: boolean;
@@ -144,6 +150,7 @@ interface TerminalState {
   setVwapAnchors: (anchors: VwapAnchor[]) => void;
   setShowBarStats: (v: boolean) => void;
   setBarStatsMetric: (m: BarStatsMetric) => void;
+  setVolumePaneMode: (m: VolumePaneMode) => void;
   setShowCvdOverlay: (v: boolean) => void;
   setShowLiqMarkers: (v: boolean) => void;
   setShowHeatmap: (v: boolean) => void;
@@ -278,6 +285,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     vwapAnchors: loadVwapAnchors(),
     showBarStats: loadShowBarStats(),
     barStatsMetric: loadBarStatsMetric(),
+    volumePaneMode: loadVolumePaneMode(),
     showCvdOverlay: false,
     showLiqMarkers: true,
     showHeatmap: true,
@@ -407,6 +415,10 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     setBarStatsMetric: (barStatsMetric) => {
       persistBarStatsMetric(barStatsMetric);
       set({ barStatsMetric });
+    },
+    setVolumePaneMode: (volumePaneMode) => {
+      persistVolumePaneMode(volumePaneMode);
+      set({ volumePaneMode });
     },
     setShowCvdOverlay: (showCvdOverlay) => set({ showCvdOverlay }),
     setShowLiqMarkers: (showLiqMarkers) => set({ showLiqMarkers }),

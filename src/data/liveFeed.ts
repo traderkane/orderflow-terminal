@@ -10,6 +10,7 @@ import type {
   Trade,
   VolumeProfileBin,
   VwapPoint,
+  TradeCountPoint,
 } from '../types/market';
 import type { FeedListener, FeedSnapshot } from './feedTypes';
 import {
@@ -30,6 +31,10 @@ import { mergeVenueBooks } from './venues/mergeBook';
 import { OkxVenue } from './venues/okx';
 import { venueSymbol } from './venues/symbols';
 import type { VenueClient, VenueDepth, VenueHandlers, VenueLevel } from './venues/types';
+import {
+  avgTradeSizeForSymbol,
+  estimateTradeCountsFromCandle,
+} from '../lib/tradeCount';
 
 const MAX_TRADES = 120;
 const MAX_LIQS = 80;
@@ -84,6 +89,7 @@ export class LiveFeed {
   private trades: Trade[] = [];
   private liquidations: Liquidation[] = [];
   private cvdSeries: CvdPoint[] = [];
+  private tradeCounts: TradeCountPoint[] = [];
   private heatmap: HeatmapFrame[] = [];
   private depthBids: VenueLevel[] = [];
   private depthAsks: VenueLevel[] = [];
@@ -382,6 +388,7 @@ export class LiveFeed {
     this.trades = [];
     this.liquidations = [];
     this.cvdSeries = [];
+    this.tradeCounts = [];
     this.heatmap = [];
     this.depthBids = [];
     this.depthAsks = [];
@@ -408,6 +415,7 @@ export class LiveFeed {
   private resetCandlesOnly() {
     this.candles = [];
     this.cvdSeries = [];
+    this.tradeCounts = [];
     this.cvd = 0;
     this.volumeProfile.clear();
     this.candlesSeeded = false;
@@ -455,6 +463,7 @@ export class LiveFeed {
     const nowSec = Math.floor(trade.time / 1000);
     this.updateCandleFromTrade(nowSec, trade.price, trade.size);
     this.updateCvdPoint(nowSec, signed);
+    this.updateTradeCount(nowSec, trade.side);
     this.bootstrapped = true;
     this.dirty = true;
   }
@@ -541,10 +550,12 @@ export class LiveFeed {
   private seedDerivedFromCandles() {
     this.cvd = 0;
     this.cvdSeries = [];
+    this.tradeCounts = [];
     this.volumeProfile.clear();
     // Footprint stays 1m — only reseed from candles when chart TF is 1m.
     if (this.candleSec === FOOTPRINT_SEC) this.footprintBars = [];
     const step = footprintStep(this.symbol);
+    const avgSz = avgTradeSizeForSymbol(this.symbol);
     for (const c of this.candles) {
       const delta = (c.close >= c.open ? 1 : -1) * c.volume * 0.55;
       this.cvd += delta;
@@ -552,6 +563,7 @@ export class LiveFeed {
       const buy = c.close >= c.open ? c.volume * 0.55 : c.volume * 0.45;
       const sell = c.volume - buy;
       this.bumpProfile(c.close, buy, sell);
+      this.tradeCounts.push(estimateTradeCountsFromCandle(c, avgSz));
       if (this.candleSec === FOOTPRINT_SEC) {
         bumpFootprint(this.footprintBars, FOOTPRINT_SEC, step, c.time, c.close, buy, sell);
       }
@@ -589,6 +601,29 @@ export class LiveFeed {
       last.value = this.cvd;
       last.delta += delta;
     }
+  }
+
+  private updateTradeCount(nowSec: number, side: 'buy' | 'sell') {
+    const bucket = Math.floor(nowSec / this.candleSec) * this.candleSec;
+    const last = this.tradeCounts[this.tradeCounts.length - 1];
+    if (!last || last.time < bucket) {
+      this.tradeCounts.push({
+        time: bucket,
+        buyCount: side === 'buy' ? 1 : 0,
+        sellCount: side === 'sell' ? 1 : 0,
+      });
+      if (this.tradeCounts.length > MAX_CANDLES) this.tradeCounts.shift();
+      return;
+    }
+    // Replace volume-seeded estimate with real aggressor counts on first live tick.
+    if (last.estimated) {
+      last.buyCount = side === 'buy' ? 1 : 0;
+      last.sellCount = side === 'sell' ? 1 : 0;
+      last.estimated = false;
+      return;
+    }
+    if (side === 'buy') last.buyCount += 1;
+    else last.sellCount += 1;
   }
 
   private bumpProfile(price: number, buy: number, sell: number) {
@@ -718,6 +753,7 @@ export class LiveFeed {
         mid: this.book.mid || last,
       },
       cvd: [...this.cvdSeries],
+      tradeCounts: [...this.tradeCounts],
       liquidations: [...this.liquidations],
       heatmap: [...this.heatmap],
       volumeProfile: profile,

@@ -43,6 +43,7 @@ import {
   computeBarStatColors,
   type BarStatsMetric,
 } from '../lib/barStats';
+import { tradeCountsFromTrades } from '../lib/tradeCount';
 import {
   VWAP_ANCHORS,
   VWAP_ANCHOR_COLOR,
@@ -133,6 +134,8 @@ export function ChartWidget() {
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const buyCountRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const sellCountRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const vwapRefs = useRef<Partial<Record<VwapAnchor, ISeriesApi<'Line'>>>>({});
   const cvdRef = useRef<ISeriesApi<'Line'> | null>(null);
   const markersRef = useRef<{ setMarkers: (m: SeriesMarker<Time>[]) => void } | null>(null);
@@ -175,6 +178,7 @@ export function ChartWidget() {
   const vwapAnchors = useTerminalStore((s) => s.vwapAnchors);
   const showBarStats = useTerminalStore((s) => s.showBarStats);
   const barStatsMetric = useTerminalStore((s) => s.barStatsMetric);
+  const volumePaneMode = useTerminalStore((s) => s.volumePaneMode);
   const showCvdOverlay = useTerminalStore((s) => s.showCvdOverlay);
   const showLiqMarkers = useTerminalStore((s) => s.showLiqMarkers);
   const showHeatmap = useTerminalStore((s) => s.showHeatmap);
@@ -188,6 +192,7 @@ export function ChartWidget() {
   const setVwapAnchors = useTerminalStore((s) => s.setVwapAnchors);
   const setShowBarStats = useTerminalStore((s) => s.setShowBarStats);
   const setBarStatsMetric = useTerminalStore((s) => s.setBarStatsMetric);
+  const setVolumePaneMode = useTerminalStore((s) => s.setVolumePaneMode);
   const setShowCvdOverlay = useTerminalStore((s) => s.setShowCvdOverlay);
   const setShowLiqMarkers = useTerminalStore((s) => s.setShowLiqMarkers);
   const setShowHeatmap = useTerminalStore((s) => s.setShowHeatmap);
@@ -827,8 +832,16 @@ export function ChartWidget() {
       priceFormat: { type: 'volume' },
       priceScaleId: 'vol',
     });
+    const buyCount = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'vol',
+    });
+    const sellCount = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'vol',
+    });
     chart.priceScale('vol').applyOptions({
-      scaleMargins: { top: 0.82, bottom: 0 },
+      scaleMargins: { top: 0.78, bottom: 0 },
       borderVisible: false,
     });
 
@@ -868,6 +881,8 @@ export function ChartWidget() {
     chartRef.current = chart;
     candleRef.current = candles;
     volumeRef.current = volume;
+    buyCountRef.current = buyCount;
+    sellCountRef.current = sellCount;
     cvdRef.current = cvd;
 
     const onRange = () => scheduleOverlays();
@@ -1241,13 +1256,54 @@ export function ChartWidget() {
       }),
     );
 
-    volumeRef.current.setData(
-      feed.candles.map((c) => ({
-        time: c.time as Time,
-        value: c.volume,
-        color: c.close >= c.open ? 'rgba(14,203,129,0.45)' : 'rgba(246,70,93,0.45)',
-      })),
-    );
+    const countMode = volumePaneMode === 'count';
+    const counts =
+      feed.tradeCounts && feed.tradeCounts.length
+        ? feed.tradeCounts
+        : tradeCountsFromTrades(
+            feed.trades ?? [],
+            feed.candles ?? [],
+            intervalSecRef.current,
+          );
+    const countByTime = new Map(counts.map((p) => [p.time, p]));
+
+    if (countMode) {
+      volumeRef.current.setData([]);
+      if (buyCountRef.current) {
+        buyCountRef.current.setData(
+          feed.candles.map((c) => {
+            const row = countByTime.get(c.time);
+            return {
+              time: c.time as Time,
+              value: row?.buyCount ?? 0,
+              color: 'rgba(14,203,129,0.55)',
+            };
+          }),
+        );
+      }
+      if (sellCountRef.current) {
+        sellCountRef.current.setData(
+          feed.candles.map((c) => {
+            const row = countByTime.get(c.time);
+            return {
+              time: c.time as Time,
+              value: -(row?.sellCount ?? 0),
+              color: 'rgba(246,70,93,0.55)',
+            };
+          }),
+        );
+      }
+    } else {
+      if (buyCountRef.current) buyCountRef.current.setData([]);
+      if (sellCountRef.current) sellCountRef.current.setData([]);
+      volumeRef.current.setData(
+        feed.candles.map((c) => ({
+          time: c.time as Time,
+          value: c.volume,
+          color: c.close >= c.open ? 'rgba(14,203,129,0.45)' : 'rgba(246,70,93,0.45)',
+        })),
+      );
+    }
 
     for (const anchor of VWAP_ANCHORS) {
       const seriesApi = vwapRefs.current[anchor];
@@ -1313,6 +1369,7 @@ export function ChartWidget() {
     vwapAnchors,
     showBarStats,
     barStatsMetric,
+    volumePaneMode,
     showCvdOverlay,
     showLiqMarkers,
     chartInterval,
@@ -1649,6 +1706,14 @@ export function ChartWidget() {
                   : undefined
               }
               gearTitle="Bar stats metric"
+            />
+            <LayerChip
+              label="Count"
+              short="Cnt"
+              on={volumePaneMode === 'count'}
+              onClick={() =>
+                setVolumePaneMode(volumePaneMode === 'count' ? 'volume' : 'count')
+              }
             />
             <LayerChip label="CVD" short="CVD" on={showCvdOverlay} onClick={() => setShowCvdOverlay(!showCvdOverlay)} />
             <LayerChip label="Liqs" short="Liq" on={showLiqMarkers} onClick={() => setShowLiqMarkers(!showLiqMarkers)} />

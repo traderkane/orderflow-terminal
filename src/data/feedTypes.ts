@@ -10,6 +10,7 @@ import type {
   SymbolId,
   Trade,
   VolumeProfileBin,
+  TradeCountPoint,
 } from '../types/market';
 
 export interface FeedSnapshot {
@@ -18,6 +19,7 @@ export interface FeedSnapshot {
   trades: Trade[];
   book: OrderBook;
   cvd: CvdPoint[];
+  tradeCounts: TradeCountPoint[];
   liquidations: Liquidation[];
   heatmap: HeatmapFrame[];
   volumeProfile: VolumeProfileBin[];

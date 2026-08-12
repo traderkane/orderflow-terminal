@@ -9,8 +9,13 @@ import type {
   SymbolId,
   Trade,
   VolumeProfileBin,
+  TradeCountPoint,
 } from '../types/market';
 import type { FeedListener, FeedSnapshot } from './feedTypes';
+import {
+  avgTradeSizeForSymbol,
+  estimateTradeCountsFromCandle,
+} from '../lib/tradeCount';
 import { intervalToSec, type ChartInterval } from '../lib/chartIntervals';
 import {
   bumpFootprint,
@@ -53,6 +58,7 @@ export class MockFeed {
   private trades: Trade[] = [];
   private liquidations: Liquidation[] = [];
   private cvdSeries: CvdPoint[] = [];
+  private tradeCounts: TradeCountPoint[] = [];
   private heatmap: HeatmapFrame[] = [];
   private volumeProfile = new Map<number, VolumeProfileBin>();
   private footprintBars: FootprintBarMut[] = [];
@@ -140,6 +146,7 @@ export class MockFeed {
     this.trades = [];
     this.liquidations = [];
     this.cvdSeries = [];
+    this.tradeCounts = [];
     this.heatmap = [];
     this.volumeProfile.clear();
     this.footprintBars = [];
@@ -168,6 +175,16 @@ export class MockFeed {
       const buy = volume * (0.4 + this.rand() * 0.3);
       const sell = volume * (0.4 + this.rand() * 0.3);
       this.bumpProfile(close, buy, sell);
+      // Synthetic pace: denser on higher volume bars (MMT-style demo).
+      const est = estimateTradeCountsFromCandle(
+        { time: t, open, high, low, close, volume },
+        avgTradeSizeForSymbol(this.symbol),
+      );
+      // Slight random skew so buy/sell pace diverges from pure OHLC heuristic.
+      const skew = 0.85 + this.rand() * 0.3;
+      const buyCount = Math.max(1, Math.round(est.buyCount * skew));
+      const sellCount = Math.max(1, Math.round(est.sellCount * (2 - skew)));
+      this.tradeCounts.push({ time: t, buyCount, sellCount, estimated: true });
       if (this.candleSec === this.footprintSec) {
         bumpFootprint(
           this.footprintBars,
@@ -219,6 +236,7 @@ export class MockFeed {
 
       this.updateCandle(now, price, size);
       this.updateCvdPoint(now, signed);
+      this.updateTradeCount(now, side);
     }
 
     if (this.rand() < 0.08) {
@@ -274,6 +292,28 @@ export class MockFeed {
       last.value = this.cvd;
       last.delta += delta;
     }
+  }
+
+  private updateTradeCount(now: number, side: 'buy' | 'sell') {
+    const bucket = Math.floor(now / this.candleSec) * this.candleSec;
+    const last = this.tradeCounts[this.tradeCounts.length - 1];
+    if (!last || last.time < bucket) {
+      this.tradeCounts.push({
+        time: bucket,
+        buyCount: side === 'buy' ? 1 : 0,
+        sellCount: side === 'sell' ? 1 : 0,
+      });
+      if (this.tradeCounts.length > 240) this.tradeCounts.shift();
+      return;
+    }
+    if (last.estimated) {
+      last.buyCount = side === 'buy' ? 1 : 0;
+      last.sellCount = side === 'sell' ? 1 : 0;
+      last.estimated = false;
+      return;
+    }
+    if (side === 'buy') last.buyCount += 1;
+    else last.sellCount += 1;
   }
 
   private bumpProfile(price: number, buy: number, sell: number) {
@@ -371,6 +411,7 @@ export class MockFeed {
       trades: [...this.trades],
       book,
       cvd: [...this.cvdSeries],
+      tradeCounts: [...this.tradeCounts],
       liquidations: [...this.liquidations],
       heatmap: [...this.heatmap],
       volumeProfile: profile,
