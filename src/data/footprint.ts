@@ -272,6 +272,175 @@ export function footprintCellImbalance(
   return null;
 }
 
+/** Minimum consecutive bars for a diagonal / stacked imbalance highlight. */
+export const FOOTPRINT_STACK_MIN = 3;
+
+export type FootprintImbSide = 'buy' | 'sell';
+
+export interface StackedImbalanceCell {
+  time: number;
+  price: number;
+  side: FootprintImbSide;
+}
+
+/** Same-side imbalance chain across adjacent bars (flat or ±1 step). */
+export interface StackedImbalanceChain {
+  side: FootprintImbSide;
+  cells: StackedImbalanceCell[];
+}
+
+function inferFootprintStep(bars: FootprintBar[], fallback = 1): number {
+  const prices: number[] = [];
+  const seen = new Set<number>();
+  for (const b of bars) {
+    for (const l of b.levels) {
+      if (!seen.has(l.price)) {
+        seen.add(l.price);
+        prices.push(l.price);
+      }
+    }
+  }
+  prices.sort((a, b) => a - b);
+  let minGap = Infinity;
+  for (let i = 1; i < prices.length; i++) {
+    const g = prices[i] - prices[i - 1];
+    if (g > 0) minGap = Math.min(minGap, g);
+  }
+  return Number.isFinite(minGap) ? minGap : fallback;
+}
+
+function stackPriceCompatible(prev: number, next: number, step: number): boolean {
+  const d = Math.abs(next - prev);
+  // Same level or one tick/step away (classic diagonal stack).
+  return d <= step * 1.01;
+}
+
+function stackLinkScore(
+  side: FootprintImbSide,
+  prevPrice: number,
+  nextPrice: number,
+  step: number,
+): number {
+  const dp = nextPrice - prevPrice;
+  const adp = Math.abs(dp);
+  if (adp <= step * 0.01) return 3; // flat
+  if (side === 'buy' && dp > 0) return 4; // buy diagonal up
+  if (side === 'sell' && dp < 0) return 4; // sell diagonal down
+  return 2; // counter-step still counts as adjacent
+}
+
+/**
+ * Detect MMT-style stacked / diagonal imbalances: same-side ≥3:1 cells
+ * chaining across consecutive footprint bars at the same or ±1 step price.
+ */
+export function detectStackedImbalances(
+  bars: FootprintBar[],
+  opts?: { maxSide?: number; step?: number; minStack?: number; maxBarGapSec?: number },
+): StackedImbalanceChain[] {
+  if (bars.length < 2) return [];
+  const minStack = opts?.minStack ?? FOOTPRINT_STACK_MIN;
+  let maxSide = opts?.maxSide ?? 0;
+  if (!(maxSide > 0)) {
+    maxSide = 1;
+    for (const b of bars) {
+      for (const l of b.levels) {
+        maxSide = Math.max(maxSide, l.buyVolume, l.sellVolume);
+      }
+    }
+  }
+  const step = opts?.step && opts.step > 0 ? opts.step : inferFootprintStep(bars);
+
+  type Node = {
+    barIdx: number;
+    side: FootprintImbSide;
+    price: number;
+    time: number;
+  };
+
+  const nodes: Node[] = [];
+  const byBarSide = new Map<string, Node[]>();
+
+  for (let bi = 0; bi < bars.length; bi++) {
+    const bar = bars[bi];
+    for (const l of bar.levels) {
+      const side = footprintCellImbalance(l.buyVolume, l.sellVolume, maxSide);
+      if (!side) continue;
+      const n: Node = { barIdx: bi, side, price: l.price, time: bar.time };
+      nodes.push(n);
+      const key = `${bi}:${side}`;
+      const arr = byBarSide.get(key);
+      if (arr) arr.push(n);
+      else byBarSide.set(key, [n]);
+    }
+  }
+
+  const pred = new Map<Node, Node>();
+  const len = new Map<Node, number>();
+
+  for (const n of nodes) {
+    len.set(n, 1);
+    if (n.barIdx <= 0) continue;
+    const prevBar = bars[n.barIdx - 1];
+    const curBar = bars[n.barIdx];
+    if (!prevBar || prevBar.time >= curBar.time) continue;
+    const gapSec = curBar.time - prevBar.time;
+    if (opts?.maxBarGapSec != null && gapSec > opts.maxBarGapSec + 0.5) continue;
+
+    const prevCandidates = byBarSide.get(`${n.barIdx - 1}:${n.side}`) ?? [];
+    let best: Node | null = null;
+    let bestScore = -1;
+    for (const p of prevCandidates) {
+      if (!stackPriceCompatible(p.price, n.price, step)) continue;
+      const link = stackLinkScore(n.side, p.price, n.price, step);
+      const composite = (len.get(p) ?? 1) * 10 + link;
+      if (composite > bestScore) {
+        bestScore = composite;
+        best = p;
+      }
+    }
+    if (best) {
+      pred.set(n, best);
+      len.set(n, (len.get(best) ?? 1) + 1);
+    }
+  }
+
+  const hasExtendingSuccessor = new Set<Node>();
+  for (const [n, p] of pred) {
+    const nLen = len.get(n) ?? 1;
+    const pLen = len.get(p) ?? 1;
+    if (nLen === pLen + 1) hasExtendingSuccessor.add(p);
+  }
+
+  const chains: StackedImbalanceChain[] = [];
+  const covered = new Set<string>();
+
+  const endpoints = nodes
+    .filter((n) => (len.get(n) ?? 1) >= minStack && !hasExtendingSuccessor.has(n))
+    .sort((a, b) => (len.get(b)! - len.get(a)!) || b.barIdx - a.barIdx);
+
+  for (const end of endpoints) {
+    const cells: StackedImbalanceCell[] = [];
+    let cur: Node | undefined = end;
+    while (cur) {
+      cells.push({ time: cur.time, price: cur.price, side: cur.side });
+      cur = pred.get(cur);
+    }
+    cells.reverse();
+    if (cells.length < minStack) continue;
+    const sig = `${end.side}:${cells.map((c) => `${c.time}@${c.price}`).join('>')}`;
+    if (covered.has(sig)) continue;
+    covered.add(sig);
+    chains.push({ side: end.side, cells });
+  }
+
+  return chains;
+}
+
+/** Lookup key for a footprint cell in a stacked chain. */
+export function stackedImbalanceKey(time: number, price: number): string {
+  return `${time}|${price}`;
+}
+
 export function formatFootprintVol(v: number): string {
   if (!(v > 0)) return '';
   if (v >= 10000) return `${(v / 1000).toFixed(0)}k`;

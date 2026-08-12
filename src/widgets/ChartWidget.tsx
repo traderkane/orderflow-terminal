@@ -56,10 +56,13 @@ import {
 } from '../lib/vwap';
 import {
   FOOTPRINT_IMBALANCE_RATIO,
+  FOOTPRINT_STACK_MIN,
+  detectStackedImbalances,
   footprintBarsForChart,
   footprintCellImbalance,
   footprintStep,
   formatFootprintVol,
+  stackedImbalanceKey,
 } from '../data/footprint';
 import { useTerminalStore } from '../store/useTerminalStore';
 import type {
@@ -460,6 +463,7 @@ export function ChartWidget() {
         }
       }
     }
+
   };
 
   const drawProfileLayer = (
@@ -667,10 +671,33 @@ export function ChartWidget() {
     const fontPx = bodyW >= 36 ? 10 : bodyW >= 28 ? 9 : 8;
     const minCellH = showText ? 7 : 2.5;
 
-    const stepGuess =
+    const stepGuess = footprintStep(symbolRef.current) || (
       candles[candles.length - 1] && candles[candles.length - 1].close >= 1000
         ? 25
-        : 1;
+        : 1
+    );
+
+    // MMT-style stacked / diagonal imbalances across adjacent bars
+    const intervalSec =
+      candles.length >= 2
+        ? Math.max(1, candles[1].time - candles[0].time)
+        : 60;
+    const stackChains = detectStackedImbalances(bars, {
+      maxSide,
+      step: stepGuess,
+      minStack: FOOTPRINT_STACK_MIN,
+      maxBarGapSec: intervalSec,
+    });
+    const stackedKeys = new Set<string>();
+    for (const chain of stackChains) {
+      for (const cell of chain.cells) {
+        stackedKeys.add(stackedImbalanceKey(cell.time, cell.price));
+      }
+    }
+    const cellGeo = new Map<
+      string,
+      { cx: number; cy: number; x0: number; yTop: number; w: number; h: number }
+    >();
 
     for (const c of candles) {
       const bar = byTime.get(c.time);
@@ -745,15 +772,42 @@ export function ChartWidget() {
           lvl.sellVolume,
           maxSide,
         );
+        const stackKey = stackedImbalanceKey(bar.time, lvl.price);
+        cellGeo.set(stackKey, {
+          cx: x0 + clusterW / 2,
+          cy: y,
+          x0,
+          yTop,
+          w: clusterW,
+          h,
+        });
+        const inStack = stackedKeys.has(stackKey);
         if (imb) {
           const imbColor =
             imb === 'buy'
               ? 'rgba(14, 203, 129, 0.95)'
               : 'rgba(246, 70, 93, 0.95)';
+          // Soft wash for stacked diagonal members
+          if (inStack) {
+            ctx.fillStyle =
+              imb === 'buy'
+                ? 'rgba(14, 203, 129, 0.16)'
+                : 'rgba(246, 70, 93, 0.16)';
+            ctx.fillRect(x0 - 1, yTop - 0.5, clusterW + 2, Math.max(1, h + 1));
+          }
           // Stronger imbalance: outer stroke + side accent bar
           ctx.strokeStyle = imbColor;
-          ctx.lineWidth = h >= 10 ? 1.5 : 1;
+          ctx.lineWidth = inStack ? (h >= 10 ? 2.25 : 1.75) : h >= 10 ? 1.5 : 1;
           ctx.strokeRect(x0 + 0.5, yTop + 0.5, clusterW - 1, Math.max(1, h - 1));
+          if (inStack) {
+            // Brighter outer edge for chain members
+            ctx.strokeStyle =
+              imb === 'buy'
+                ? 'rgba(167, 243, 208, 0.85)'
+                : 'rgba(252, 165, 165, 0.85)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x0 - 0.5, yTop - 0.5, clusterW + 1, Math.max(1, h + 1));
+          }
           ctx.fillStyle = imbColor;
           if (imb === 'buy') {
             ctx.fillRect(x0 + clusterW - 2.5, yTop + 1, 2, Math.max(1, h - 2));
@@ -839,6 +893,48 @@ export function ChartWidget() {
           ctx.fillText(label, xMid as number, chipY + 1);
         }
       }
+    }
+
+    // Diagonal stack connectors (cell wash/edge already drawn above)
+    for (const chain of stackChains) {
+      if (chain.cells.length < FOOTPRINT_STACK_MIN) continue;
+      const pts: { cx: number; cy: number }[] = [];
+      for (const cell of chain.cells) {
+        const g = cellGeo.get(stackedImbalanceKey(cell.time, cell.price));
+        if (g) pts.push(g);
+      }
+      if (pts.length < 2) continue;
+      const stroke =
+        chain.side === 'buy'
+          ? 'rgba(14, 203, 129, 0.85)'
+          : 'rgba(246, 70, 93, 0.85)';
+      const glow =
+        chain.side === 'buy'
+          ? 'rgba(14, 203, 129, 0.2)'
+          : 'rgba(246, 70, 93, 0.2)';
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(pts[0].cx, pts[0].cy);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].cx, pts[i].cy);
+      ctx.strokeStyle = glow;
+      ctx.lineWidth = 5;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(pts[0].cx, pts[0].cy);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].cx, pts[i].cy);
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1.75;
+      ctx.stroke();
+      for (const p of pts) {
+        ctx.beginPath();
+        ctx.arc(p.cx, p.cy, 2.4, 0, Math.PI * 2);
+        ctx.fillStyle = stroke;
+        ctx.fill();
+      }
+      ctx.restore();
     }
   };
 
@@ -1890,7 +1986,7 @@ export function ChartWidget() {
           </div>
           {chartMode === 'footprint' && (
             <div className="pointer-events-none hidden h-6 items-center rounded-[2px] border border-terminal-border/80 bg-black/45 px-1.5 font-mono text-[9px] uppercase tracking-wider text-zinc-500 backdrop-blur-[2px] sm:flex">
-              sell|buy · imb ≥{FOOTPRINT_IMBALANCE_RATIO}:1
+              sell|buy · imb ≥{FOOTPRINT_IMBALANCE_RATIO}:1 · stack≥{FOOTPRINT_STACK_MIN}
             </div>
           )}
         </div>
