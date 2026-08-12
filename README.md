@@ -116,10 +116,11 @@ App rail **Alerts** opens a right slide-over to create / list / delete alerts (p
 ## Layout
 
 - Drag widgets from the header handle; resize from corners
-- Layout + widget set persist in `localStorage`
+- Layout + widget set persist in `localStorage` (`flow-terminal-layout-v8` / `flow-terminal-widgets-v8`)
 - **Layout tabs** under the top bar: quick-switch **Scalp / Profile / Default** (+ user-saved templates); optional **+** saves current as a new tab
 - **Layouts** drawer (app rail): slide-over matching layout-tab language — save current grid, load Scalp/Profile/Default or user tabs
-- Built-in presets: **Scalp** (chart + DOM + tape), **Profile** (chart + TPO + VPVR + footprint)
+- Built-in presets: **Scalp** (chart + right **Book | Tape** tab dock + bottom **Heatmap | CVD | Liqs | Stats** dock), **Profile** (chart + TPO + VPVR + footprint)
+- **Tab docks** share one chrome frame with browser/MMT-style tabs; standalone widgets remain available via the launcher
 - **Reset layout** restores the chart-dominant pro workspace
 - **+ Widget** launcher adds another panel instance
 

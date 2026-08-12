@@ -13,6 +13,7 @@ import { LiquidationsWidget } from '../widgets/LiquidationsWidget';
 import { LiquidationMapWidget } from '../widgets/LiquidationMapWidget';
 import { TpoWidget } from '../widgets/TpoWidget';
 import { StatsWidget } from '../widgets/StatsWidget';
+import { TabDockWidget } from '../widgets/TabDockWidget';
 import type { LayoutItem, WidgetType } from '../types/market';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -65,6 +66,8 @@ function renderWidget(type: WidgetType) {
       return <TpoWidget />;
     case 'stats':
       return <StatsWidget />;
+    case 'tabDock':
+      return null;
   }
 }
 
@@ -189,6 +192,17 @@ export function TerminalGrid() {
             const widget = byId.get(item.i);
             if (!widget) return <div key={item.i} />;
             const isChart = widget.type === 'chart';
+            if (widget.type === 'tabDock') {
+              return (
+                <div key={item.i} className="h-full is-side-widget">
+                  <TabDockWidget
+                    widget={widget}
+                    renderPanel={renderWidget}
+                    onClose={chartMaximized ? undefined : () => removeWidget(widget.id)}
+                  />
+                </div>
+              );
+            }
             return (
               <div
                 key={item.i}

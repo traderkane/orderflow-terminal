@@ -56,8 +56,8 @@ import {
   persistChartLayers,
 } from '../lib/chartLayers';
 
-const LAYOUT_KEY = 'flow-terminal-layout-v7';
-const WIDGETS_KEY = 'flow-terminal-widgets-v7';
+const LAYOUT_KEY = 'flow-terminal-layout-v8';
+const WIDGETS_KEY = 'flow-terminal-widgets-v8';
 const FEED_MODE_KEY = 'flow-terminal-feed-mode';
 const ALERTS_KEY = 'flow-terminal-alerts-v1';
 const ALERT_HISTORY_KEY = 'flow-terminal-alert-history-v1';
@@ -72,25 +72,27 @@ export const LAYOUT_TAB_PROFILE_ID = 'builtin-profile';
 const MAX_ALERT_HISTORY = 40;
 const MAX_TOASTS = 5;
 
-/** Default = Scalp-like: chart-first workspace, DOM+tape tight right, secondary strip. */
+/** Default = Scalp v8: chart + right Book|Tape dock + bottom strip dock. */
 const DEFAULT_WIDGETS: WidgetInstance[] = [
   { id: 'chart', type: 'chart' },
-  { id: 'orderbook', type: 'orderbook' },
-  { id: 'trades', type: 'trades' },
-  { id: 'heatmap', type: 'heatmap' },
-  { id: 'cvd', type: 'cvd' },
-  { id: 'liquidations', type: 'liquidations' },
-  { id: 'stats', type: 'stats' },
+  {
+    id: 'rightDock',
+    type: 'tabDock',
+    tabs: ['orderbook', 'trades'],
+    activeTab: 0,
+  },
+  {
+    id: 'bottomDock',
+    type: 'tabDock',
+    tabs: ['heatmap', 'cvd', 'liquidations', 'stats'],
+    activeTab: 0,
+  },
 ];
 
 const DEFAULT_LAYOUT: LayoutItem[] = [
   { i: 'chart', x: 0, y: 0, w: 8, h: 22, minW: 5, minH: 8 },
-  { i: 'orderbook', x: 8, y: 0, w: 2, h: 22, minW: 2, minH: 6 },
-  { i: 'trades', x: 10, y: 0, w: 2, h: 22, minW: 2, minH: 6 },
-  { i: 'heatmap', x: 0, y: 22, w: 4, h: 6, minW: 3, minH: 4 },
-  { i: 'cvd', x: 4, y: 22, w: 3, h: 6, minW: 2, minH: 4 },
-  { i: 'liquidations', x: 7, y: 22, w: 3, h: 6, minW: 2, minH: 3 },
-  { i: 'stats', x: 10, y: 22, w: 2, h: 6, minW: 2, minH: 2 },
+  { i: 'rightDock', x: 8, y: 0, w: 4, h: 22, minW: 2, minH: 6 },
+  { i: 'bottomDock', x: 0, y: 22, w: 12, h: 6, minW: 4, minH: 4 },
 ];
 
 function loadJson<T>(key: string, fallback: T): T {
@@ -180,6 +182,8 @@ interface TerminalState {
   resetLayout: () => void;
   addWidget: (type: WidgetType) => void;
   removeWidget: (id: string) => void;
+  /** Switch the visible child inside a tabDock widget. */
+  setDockActiveTab: (id: string, index: number) => void;
   setShowVwap: (v: boolean) => void;
   setVwapAnchors: (anchors: VwapAnchor[]) => void;
   setShowBarStats: (v: boolean) => void;
@@ -444,6 +448,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     },
 
     addWidget: (type) => {
+      // Tab docks are layout primitives (Scalp presets); launcher adds standalone panels.
+      if (type === 'tabDock') return;
       const id = `${type}_${Date.now().toString(36)}`;
       const widgets = [...get().widgets, { id, type }];
       const layout = [
@@ -459,6 +465,21 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
       const layout = get().layout.filter((l) => l.i !== id);
       set({ widgets, layout });
       persist(widgets, layout);
+    },
+
+    setDockActiveTab: (id, index) => {
+      const widgets = get().widgets.map((w) => {
+        if (w.id !== id || w.type !== 'tabDock') return w;
+        const tabs = (w.tabs ?? []).filter((t) => t !== 'tabDock');
+        if (!tabs.length) return w;
+        const activeTab = Math.max(0, Math.min(Math.floor(index), tabs.length - 1));
+        if (activeTab === (w.activeTab ?? 0) && tabs.length === (w.tabs?.length ?? 0)) {
+          return w;
+        }
+        return { ...w, tabs, activeTab };
+      });
+      set({ widgets });
+      persist(widgets, get().layout);
     },
 
     setShowVwap: (showVwap) => {
@@ -738,4 +759,28 @@ export const WIDGET_META: Record<
     description: 'Time Price Opportunity market profile',
   },
   stats: { title: 'Stats', description: 'Last, funding, OI, spread' },
+  tabDock: {
+    title: 'Tab Dock',
+    description: 'Tabbed panel group (layout primitive — used by Scalp)',
+  },
 };
+
+/** Short MMT-style labels for tab-dock headers. */
+export const WIDGET_TAB_LABEL: Partial<Record<WidgetType, string>> = {
+  orderbook: 'Book',
+  trades: 'Tape',
+  heatmap: 'Heatmap',
+  cvd: 'CVD',
+  liquidations: 'Liqs',
+  liquidationMap: 'Liq Map',
+  volumeProfile: 'VPVR',
+  footprint: 'Footprint',
+  tpo: 'TPO',
+  stats: 'Stats',
+  chart: 'Chart',
+};
+
+/** Types offered by the widget launcher / command palette (excludes tabDock). */
+export const LAUNCHABLE_WIDGET_TYPES = (
+  Object.keys(WIDGET_META) as WidgetType[]
+).filter((t) => t !== 'tabDock');

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { SymbolId, WidgetType } from '../types/market';
+import type { SymbolId } from '../types/market';
 import { fuzzyFilter } from '../lib/fuzzy';
 import {
   LAYOUT_TAB_DEFAULT_ID,
   LAYOUT_TAB_PROFILE_ID,
   LAYOUT_TAB_SCALP_ID,
   useTerminalStore,
+  LAUNCHABLE_WIDGET_TYPES,
   WIDGET_META,
 } from '../store/useTerminalStore';
 
@@ -27,7 +28,7 @@ interface PaletteAction {
   run: () => void;
 }
 
-const WIDGET_TYPES = Object.keys(WIDGET_META) as WidgetType[];
+const WIDGET_TYPES = LAUNCHABLE_WIDGET_TYPES;
 const SYMBOLS: SymbolId[] = ['BTC/USD', 'ETH/USD'];
 
 const CATEGORY_ORDER: Category[] = [

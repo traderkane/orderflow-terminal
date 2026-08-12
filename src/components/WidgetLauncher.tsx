@@ -1,7 +1,4 @@
-import { useTerminalStore, WIDGET_META } from '../store/useTerminalStore';
-import type { WidgetType } from '../types/market';
-
-const TYPES = Object.keys(WIDGET_META) as WidgetType[];
+import { useTerminalStore, WIDGET_META, LAUNCHABLE_WIDGET_TYPES } from '../store/useTerminalStore';
 
 export function WidgetLauncher() {
   const open = useTerminalStore((s) => s.launcherOpen);
@@ -27,7 +24,7 @@ export function WidgetLauncher() {
           </button>
         </div>
         <div className="grid grid-cols-2 gap-1.5 p-2.5">
-          {TYPES.map((type) => (
+          {LAUNCHABLE_WIDGET_TYPES.map((type) => (
             <button
               key={type}
               type="button"

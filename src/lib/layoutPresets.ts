@@ -1,25 +1,27 @@
 import type { LayoutItem, LayoutTemplate, WidgetInstance } from '../types/market';
 
-/** Scalp: large chart workspace, tight DOM+tape on the right, secondary strip below. */
+/** Scalp v8: chart workspace + right Book|Tape dock + bottom Heatmap|CVD|Liqs|Stats dock. */
 const SCALP_WIDGETS: WidgetInstance[] = [
   { id: 'chart', type: 'chart' },
-  { id: 'orderbook', type: 'orderbook' },
-  { id: 'trades', type: 'trades' },
-  { id: 'heatmap', type: 'heatmap' },
-  { id: 'cvd', type: 'cvd' },
-  { id: 'liquidations', type: 'liquidations' },
-  { id: 'stats', type: 'stats' },
+  {
+    id: 'rightDock',
+    type: 'tabDock',
+    tabs: ['orderbook', 'trades'],
+    activeTab: 0,
+  },
+  {
+    id: 'bottomDock',
+    type: 'tabDock',
+    tabs: ['heatmap', 'cvd', 'liquidations', 'stats'],
+    activeTab: 0,
+  },
 ];
 
 /** 28-row design grid — fills typical 900–1080p workspace via dynamic rowHeight. */
 const SCALP_LAYOUT: LayoutItem[] = [
   { i: 'chart', x: 0, y: 0, w: 8, h: 22, minW: 5, minH: 8 },
-  { i: 'orderbook', x: 8, y: 0, w: 2, h: 22, minW: 2, minH: 6 },
-  { i: 'trades', x: 10, y: 0, w: 2, h: 22, minW: 2, minH: 6 },
-  { i: 'heatmap', x: 0, y: 22, w: 4, h: 6, minW: 3, minH: 4 },
-  { i: 'cvd', x: 4, y: 22, w: 3, h: 6, minW: 2, minH: 4 },
-  { i: 'liquidations', x: 7, y: 22, w: 3, h: 6, minW: 2, minH: 3 },
-  { i: 'stats', x: 10, y: 22, w: 2, h: 6, minW: 2, minH: 2 },
+  { i: 'rightDock', x: 8, y: 0, w: 4, h: 22, minW: 2, minH: 6 },
+  { i: 'bottomDock', x: 0, y: 22, w: 12, h: 6, minW: 4, minH: 4 },
 ];
 
 const PROFILE_WIDGETS: WidgetInstance[] = [

@@ -151,11 +151,17 @@ export type WidgetType =
   | 'liquidations'
   | 'liquidationMap'
   | 'tpo'
-  | 'stats';
+  | 'stats'
+  /** Hosts multiple child widget types behind one chrome frame with tabs. */
+  | 'tabDock';
 
 export interface WidgetInstance {
   id: string;
   type: WidgetType;
+  /** Ordered child panels when type === 'tabDock' (never nested tabDocks). */
+  tabs?: WidgetType[];
+  /** Index into `tabs` for the visible child. */
+  activeTab?: number;
 }
 
 export interface LayoutItem {
