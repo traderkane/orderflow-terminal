@@ -33,7 +33,7 @@ npm run preview
 
 ## Widgets
 
-1. **Chart** — TradingView/MMT-style workspace: **Candles | Footprint** mode switch; left icon drawing rail (select / H-Line / Trend / Rect / Fib / Magnet / Eraser / Clear), bottom layer dock, TF pills **1m / 5m / 15m / 1h**; Footprint mode paints clustered sell|buy volumes inside each bar with delta tint + imbalance outlines (best at 1m; denser/compact on higher TFs); selected-drawing properties mini-panel (color / width / extend L-R / delete); magnet snap to candle OHLC+mid; maximize chart from header (**F** / Esc); drag-to-move drawings with handles; layers Heatmap / VPVR / Bubbles / VWAP / CVD / Liqs; drawings (+styles) persisted per symbol
+1. **Chart** — TradingView/MMT-style workspace: **Candles | Footprint** mode switch; left icon drawing rail (select / H-Line / Trend / Rect / Fib / Magnet / Eraser / Clear), bottom layer dock, TF pills **1m / 5m / 15m / 1h**; Footprint mode paints clustered sell|buy volumes inside each bar with delta tint + imbalance outlines (best at 1m; denser/compact on higher TFs); selected-drawing properties mini-panel (color / width / extend L-R / delete); magnet snap to candle OHLC+mid; maximize chart from header (**F** / Esc); drag-to-move drawings with handles; layers Heatmap / VPVR / Bubbles / **session VWAP** (Day/Week/24h anchors, multi-plot) / **Bars** (volume|delta intensity) / CVD / Liqs; drawings (+styles) persisted per symbol
 2. **Order Book / DOM** — bids/asks, depth bars, spread
 3. **Trades Tape** — scrolling aggressor buys/sells with size highlighting
 4. **Order Book Heatmap** — canvas time × price liquidity
@@ -71,6 +71,18 @@ Resilience notes:
 - Binance futures WS is primary; spot Vision fallback for tape/klines if futures aggTrade is filtered.
 - If no selected venue becomes live within ~12s, the app falls back to mock.
 
+
+
+## Session VWAP & bar stats
+
+Chart layer dock:
+
+- **VWAP** — session-anchored lines computed from candle typical price × volume (`(H+L+C)/3`). Anchors (multi-select, persisted as `flow-terminal-vwap-anchors-v1`):
+  - **Session / Day** — resets at UTC midnight (solid gold)
+  - **Week** — resets Monday 00:00 UTC (dashed violet)
+  - **Rolling 24h** — trailing 24h window (dotted cyan)
+  - Day + Week can plot together. History is capped by the rolling candle buffer (~240 bars), so Week/24h on low TFs only cover the available window.
+- **Bars** — MMT-style bar-stats lite: grades candle body/wick intensity by **Volume** or **Delta** vs a 20-bar trailing average (persisted `flow-terminal-bar-stats-v1` / `…-metric-v1`). Direction stays green/red; brightness encodes relative size. Disabled visually in Footprint mode so clusters stay readable.
 
 ## Chart timeframes & modes
 

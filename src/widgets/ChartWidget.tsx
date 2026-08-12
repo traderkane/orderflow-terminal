@@ -6,6 +6,7 @@ import {
   createSeriesMarkers,
   HistogramSeries,
   LineSeries,
+  LineStyle,
   type IChartApi,
   type ISeriesApi,
   type MouseEventParams,
@@ -38,6 +39,19 @@ import {
 } from '../lib/chartDrawings';
 import { CHART_INTERVALS, intervalToSec, type ChartInterval } from '../lib/chartIntervals';
 import type { ChartMode } from '../lib/chartMode';
+import {
+  computeBarStatColors,
+  type BarStatsMetric,
+} from '../lib/barStats';
+import {
+  VWAP_ANCHORS,
+  VWAP_ANCHOR_COLOR,
+  VWAP_ANCHOR_LABEL,
+  VWAP_ANCHOR_TITLE,
+  computeVwapSeriesForAnchor,
+  toggleVwapAnchor,
+  type VwapAnchor,
+} from '../lib/vwap';
 import {
   FOOTPRINT_IMBALANCE_RATIO,
   footprintBarsForChart,
@@ -119,7 +133,7 @@ export function ChartWidget() {
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const vwapRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const vwapRefs = useRef<Partial<Record<VwapAnchor, ISeriesApi<'Line'>>>>({});
   const cvdRef = useRef<ISeriesApi<'Line'> | null>(null);
   const markersRef = useRef<{ setMarkers: (m: SeriesMarker<Time>[]) => void } | null>(null);
   const rafRef = useRef<number>(0);
@@ -142,6 +156,8 @@ export function ChartWidget() {
   const [hoverCursor, setHoverCursor] = useState<HoverCursor>('default');
   const [priceEdit, setPriceEdit] = useState<{ id: string; value: string } | null>(null);
   const [magnetOn, setMagnetOn] = useState(true);
+  const [vwapMenuOpen, setVwapMenuOpen] = useState(false);
+  const [barStatsMenuOpen, setBarStatsMenuOpen] = useState(false);
 
   const toolRef = useRef<DrawingTool>('select');
   const drawingsRef = useRef<ChartDrawing[]>([]);
@@ -156,6 +172,9 @@ export function ChartWidget() {
   const feed = useTerminalStore((s) => s.feed);
   const symbol = useTerminalStore((s) => s.symbol);
   const showVwap = useTerminalStore((s) => s.showVwap);
+  const vwapAnchors = useTerminalStore((s) => s.vwapAnchors);
+  const showBarStats = useTerminalStore((s) => s.showBarStats);
+  const barStatsMetric = useTerminalStore((s) => s.barStatsMetric);
   const showCvdOverlay = useTerminalStore((s) => s.showCvdOverlay);
   const showLiqMarkers = useTerminalStore((s) => s.showLiqMarkers);
   const showHeatmap = useTerminalStore((s) => s.showHeatmap);
@@ -166,6 +185,9 @@ export function ChartWidget() {
   const chartMode = useTerminalStore((s) => s.chartMode);
   const setChartMode = useTerminalStore((s) => s.setChartMode);
   const setShowVwap = useTerminalStore((s) => s.setShowVwap);
+  const setVwapAnchors = useTerminalStore((s) => s.setVwapAnchors);
+  const setShowBarStats = useTerminalStore((s) => s.setShowBarStats);
+  const setBarStatsMetric = useTerminalStore((s) => s.setBarStatsMetric);
   const setShowCvdOverlay = useTerminalStore((s) => s.setShowCvdOverlay);
   const setShowLiqMarkers = useTerminalStore((s) => s.setShowLiqMarkers);
   const setShowHeatmap = useTerminalStore((s) => s.setShowHeatmap);
@@ -810,13 +832,23 @@ export function ChartWidget() {
       borderVisible: false,
     });
 
-    const vwap = chart.addSeries(LineSeries, {
-      color: '#f0b90b',
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
+    const vwapLineStyle: Record<VwapAnchor, LineStyle> = {
+      session: LineStyle.Solid,
+      week: LineStyle.Dashed,
+      rolling24h: LineStyle.Dotted,
+    };
+    const vwapMap: Partial<Record<VwapAnchor, ISeriesApi<'Line'>>> = {};
+    for (const anchor of VWAP_ANCHORS) {
+      vwapMap[anchor] = chart.addSeries(LineSeries, {
+        color: VWAP_ANCHOR_COLOR[anchor],
+        lineWidth: 1,
+        lineStyle: vwapLineStyle[anchor],
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+    }
+    vwapRefs.current = vwapMap;
 
     const cvd = chart.addSeries(LineSeries, {
       color: '#38bdf8',
@@ -836,7 +868,6 @@ export function ChartWidget() {
     chartRef.current = chart;
     candleRef.current = candles;
     volumeRef.current = volume;
-    vwapRef.current = vwap;
     cvdRef.current = cvd;
 
     const onRange = () => scheduleOverlays();
@@ -1184,14 +1215,30 @@ export function ChartWidget() {
   useEffect(() => {
     if (!feed || !candleRef.current || !volumeRef.current) return;
 
+    const fpMode = chartMode === 'footprint';
+    const useBarStats = showBarStats && !fpMode;
+    const barColors = useBarStats
+      ? computeBarStatColors(feed.candles, feed.cvd ?? [], barStatsMetric)
+      : null;
+
     candleRef.current.setData(
-      feed.candles.map((c) => ({
-        time: c.time as Time,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      })),
+      feed.candles.map((c, i) => {
+        const base = {
+          time: c.time as Time,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+        };
+        if (!barColors) return base;
+        const col = barColors[i];
+        return {
+          ...base,
+          color: col.color,
+          borderColor: col.borderColor,
+          wickColor: col.wickColor,
+        };
+      }),
     );
 
     volumeRef.current.setData(
@@ -1202,16 +1249,16 @@ export function ChartWidget() {
       })),
     );
 
-    if (vwapRef.current) {
-      if (showVwap) {
-        const series = feed.vwapSeries?.length
-          ? feed.vwapSeries
-          : feed.candles.map((c) => ({ time: c.time, value: feed.vwap }));
-        vwapRef.current.setData(
+    for (const anchor of VWAP_ANCHORS) {
+      const seriesApi = vwapRefs.current[anchor];
+      if (!seriesApi) continue;
+      if (showVwap && vwapAnchors.includes(anchor)) {
+        const series = computeVwapSeriesForAnchor(feed.candles, anchor);
+        seriesApi.setData(
           series.map((p) => ({ time: p.time as Time, value: p.value })),
         );
       } else {
-        vwapRef.current.setData([]);
+        seriesApi.setData([]);
       }
     }
 
@@ -1260,7 +1307,39 @@ export function ChartWidget() {
     );
     scheduleOverlays();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feed, showVwap, showCvdOverlay, showLiqMarkers, chartInterval, chartMode]);
+  }, [
+    feed,
+    showVwap,
+    vwapAnchors,
+    showBarStats,
+    barStatsMetric,
+    showCvdOverlay,
+    showLiqMarkers,
+    chartInterval,
+    chartMode,
+  ]);
+
+  useEffect(() => {
+    if (!vwapMenuOpen && !barStatsMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('[data-layer-menus]')) return;
+      setVwapMenuOpen(false);
+      setBarStatsMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setVwapMenuOpen(false);
+        setBarStatsMenuOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [vwapMenuOpen, barStatsMenuOpen]);
 
   useEffect(() => {
     scheduleOverlays();
@@ -1526,15 +1605,116 @@ export function ChartWidget() {
         </div>
 
         {/* Layer dock — secondary, bottom, doesn't fight drawings */}
-        <div className="pointer-events-none absolute bottom-1.5 left-1.5 right-14 z-10 flex justify-start">
+        <div data-layer-menus className="pointer-events-none absolute bottom-1.5 left-1.5 right-14 z-10 flex justify-start gap-1">
           <div className="pointer-events-auto flex h-6 items-stretch overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
             <LayerChip label="Heatmap" short="HM" on={showHeatmap} onClick={() => setShowHeatmap(!showHeatmap)} />
             <LayerChip label="Profile" short="VP" on={showProfile} onClick={() => setShowProfile(!showProfile)} />
             <LayerChip label="Bubbles" short="Bub" on={showBubbles} onClick={() => setShowBubbles(!showBubbles)} />
-            <LayerChip label="VWAP" short="VWAP" on={showVwap} onClick={() => setShowVwap(!showVwap)} />
+            <LayerChip
+              label="VWAP"
+              short="VWAP"
+              on={showVwap}
+              onClick={() => {
+                const next = !showVwap;
+                setShowVwap(next);
+                setVwapMenuOpen(next);
+                if (next) setBarStatsMenuOpen(false);
+              }}
+              onGear={
+                showVwap
+                  ? () => {
+                      setVwapMenuOpen((v) => !v);
+                      setBarStatsMenuOpen(false);
+                    }
+                  : undefined
+              }
+              gearTitle="VWAP anchors"
+            />
+            <LayerChip
+              label="Bars"
+              short="Bar"
+              on={showBarStats}
+              onClick={() => {
+                const next = !showBarStats;
+                setShowBarStats(next);
+                setBarStatsMenuOpen(next);
+                if (next) setVwapMenuOpen(false);
+              }}
+              onGear={
+                showBarStats
+                  ? () => {
+                      setBarStatsMenuOpen((v) => !v);
+                      setVwapMenuOpen(false);
+                    }
+                  : undefined
+              }
+              gearTitle="Bar stats metric"
+            />
             <LayerChip label="CVD" short="CVD" on={showCvdOverlay} onClick={() => setShowCvdOverlay(!showCvdOverlay)} />
             <LayerChip label="Liqs" short="Liq" on={showLiqMarkers} onClick={() => setShowLiqMarkers(!showLiqMarkers)} />
           </div>
+          {showVwap && vwapMenuOpen && (
+            <div className="pointer-events-auto absolute bottom-8 left-0 z-20 min-w-[148px] rounded-[2px] border border-terminal-border bg-black/90 p-1 shadow-panel backdrop-blur-[2px]">
+              <div className="px-1.5 pb-1 pt-0.5 font-mono text-[9px] uppercase tracking-wider text-zinc-500">
+                VWAP anchor
+              </div>
+              {VWAP_ANCHORS.map((anchor) => {
+                const on = vwapAnchors.includes(anchor);
+                return (
+                  <button
+                    key={anchor}
+                    type="button"
+                    title={VWAP_ANCHOR_TITLE[anchor]}
+                    onClick={() => setVwapAnchors(toggleVwapAnchor(vwapAnchors, anchor))}
+                    className={`flex w-full items-center gap-1.5 rounded-[2px] px-1.5 py-1 text-left font-mono text-[10px] uppercase tracking-wider ${
+                      on
+                        ? 'bg-white/[0.06] text-zinc-100'
+                        : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
+                    }`}
+                  >
+                    <span
+                      className="inline-block h-1.5 w-3 rounded-full"
+                      style={{ background: VWAP_ANCHOR_COLOR[anchor], opacity: on ? 1 : 0.35 }}
+                    />
+                    {VWAP_ANCHOR_LABEL[anchor]}
+                    {on && <span className="ml-auto text-accent">✓</span>}
+                  </button>
+                );
+              })}
+              <div className="mt-0.5 border-t border-terminal-border/80 px-1.5 pt-1 font-mono text-[9px] leading-snug text-zinc-600">
+                Day+Week ok · limited by candle history
+              </div>
+            </div>
+          )}
+          {showBarStats && barStatsMenuOpen && (
+            <div className="pointer-events-auto absolute bottom-8 left-[210px] z-20 min-w-[120px] rounded-[2px] border border-terminal-border bg-black/90 p-1 shadow-panel backdrop-blur-[2px] sm:left-[260px]">
+              <div className="px-1.5 pb-1 pt-0.5 font-mono text-[9px] uppercase tracking-wider text-zinc-500">
+                Bar stats
+              </div>
+              {([
+                ['volume', 'Volume'],
+                ['delta', 'Delta'],
+              ] as [BarStatsMetric, string][]).map(([id, label]) => {
+                const on = barStatsMetric === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    title={`Grade candles by ${label.toLowerCase()} vs recent average`}
+                    onClick={() => setBarStatsMetric(id)}
+                    className={`flex w-full items-center rounded-[2px] px-1.5 py-1 text-left font-mono text-[10px] uppercase tracking-wider ${
+                      on
+                        ? 'bg-white/[0.06] text-zinc-100'
+                        : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
+                    }`}
+                  >
+                    {label}
+                    {on && <span className="ml-auto text-accent">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {toolHint && (
@@ -1735,26 +1915,49 @@ function LayerChip({
   short,
   on,
   onClick,
+  onGear,
+  gearTitle,
 }: {
   label: string;
   short: string;
   on: boolean;
   onClick: () => void;
+  onGear?: () => void;
+  gearTitle?: string;
 }) {
   return (
-    <button
-      type="button"
-      title={label}
-      onClick={onClick}
-      className={`px-1.5 text-[9px] font-semibold uppercase tracking-wider ${
-        on
-          ? 'bg-up/15 text-up'
-          : 'text-zinc-600 hover:bg-white/[0.03] hover:text-zinc-300'
-      }`}
-    >
-      <span className="hidden sm:inline">{label}</span>
-      <span className="sm:hidden">{short}</span>
-    </button>
+    <span className="inline-flex items-stretch">
+      <button
+        type="button"
+        title={label}
+        onClick={onClick}
+        className={`px-1.5 text-[9px] font-semibold uppercase tracking-wider ${
+          on
+            ? 'bg-up/15 text-up'
+            : 'text-zinc-600 hover:bg-white/[0.03] hover:text-zinc-300'
+        }`}
+      >
+        <span className="hidden sm:inline">{label}</span>
+        <span className="sm:hidden">{short}</span>
+      </button>
+      {onGear && (
+        <button
+          type="button"
+          title={gearTitle ?? `${label} options`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onGear();
+          }}
+          className={`border-l border-terminal-border/70 px-1 text-[9px] ${
+            on
+              ? 'bg-up/10 text-up/90 hover:text-up'
+              : 'text-zinc-600 hover:bg-white/[0.03] hover:text-zinc-300'
+          }`}
+        >
+          ▾
+        </button>
+      )}
+    </span>
   );
 }
 

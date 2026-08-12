@@ -34,6 +34,18 @@ import {
   persistChartMode,
   type ChartMode,
 } from '../lib/chartMode';
+import {
+  loadVwapAnchors,
+  persistVwapAnchors,
+  type VwapAnchor,
+} from '../lib/vwap';
+import {
+  loadBarStatsMetric,
+  loadShowBarStats,
+  persistBarStatsMetric,
+  persistShowBarStats,
+  type BarStatsMetric,
+} from '../lib/barStats';
 
 const LAYOUT_KEY = 'flow-terminal-layout-v6';
 const WIDGETS_KEY = 'flow-terminal-widgets-v6';
@@ -99,6 +111,9 @@ interface TerminalState {
   widgets: WidgetInstance[];
   layout: LayoutItem[];
   showVwap: boolean;
+  vwapAnchors: VwapAnchor[];
+  showBarStats: boolean;
+  barStatsMetric: BarStatsMetric;
   showCvdOverlay: boolean;
   showLiqMarkers: boolean;
   showHeatmap: boolean;
@@ -126,6 +141,9 @@ interface TerminalState {
   addWidget: (type: WidgetType) => void;
   removeWidget: (id: string) => void;
   setShowVwap: (v: boolean) => void;
+  setVwapAnchors: (anchors: VwapAnchor[]) => void;
+  setShowBarStats: (v: boolean) => void;
+  setBarStatsMetric: (m: BarStatsMetric) => void;
   setShowCvdOverlay: (v: boolean) => void;
   setShowLiqMarkers: (v: boolean) => void;
   setShowHeatmap: (v: boolean) => void;
@@ -257,6 +275,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     widgets: loadJson(WIDGETS_KEY, DEFAULT_WIDGETS),
     layout: loadJson(LAYOUT_KEY, DEFAULT_LAYOUT),
     showVwap: true,
+    vwapAnchors: loadVwapAnchors(),
+    showBarStats: loadShowBarStats(),
+    barStatsMetric: loadBarStatsMetric(),
     showCvdOverlay: false,
     showLiqMarkers: true,
     showHeatmap: true,
@@ -375,6 +396,18 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     },
 
     setShowVwap: (showVwap) => set({ showVwap }),
+    setVwapAnchors: (vwapAnchors) => {
+      persistVwapAnchors(vwapAnchors);
+      set({ vwapAnchors });
+    },
+    setShowBarStats: (showBarStats) => {
+      persistShowBarStats(showBarStats);
+      set({ showBarStats });
+    },
+    setBarStatsMetric: (barStatsMetric) => {
+      persistBarStatsMetric(barStatsMetric);
+      set({ barStatsMetric });
+    },
     setShowCvdOverlay: (showCvdOverlay) => set({ showCvdOverlay }),
     setShowLiqMarkers: (showLiqMarkers) => set({ showLiqMarkers }),
     setShowHeatmap: (showHeatmap) => set({ showHeatmap }),
@@ -544,7 +577,7 @@ export const WIDGET_META: Record<
   WidgetType,
   { title: string; description: string }
 > = {
-  chart: { title: 'Chart', description: 'Workspace chart — drawings, heatmap, VPVR, bubbles, VWAP / CVD / liqs' },
+  chart: { title: 'Chart', description: 'Workspace chart — drawings, heatmap, VPVR, bubbles, session VWAP, bar stats, CVD / liqs' },
   orderbook: { title: 'Order Book', description: 'DOM ladder with cumulative depth' },
   trades: { title: 'Trades Tape', description: 'Aggressor buy/sell tape' },
   heatmap: { title: 'Book Heatmap', description: 'Time × price liquidity' },
