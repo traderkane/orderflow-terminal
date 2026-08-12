@@ -97,14 +97,17 @@ select {
   min-height: 100%;
 }
 
-.layout-tabs {
+.layout-tabs,
+.watchlist-strip {
   scrollbar-width: thin;
   scrollbar-color: #2a3342 transparent;
 }
-.layout-tabs::-webkit-scrollbar {
+.layout-tabs::-webkit-scrollbar,
+.watchlist-strip::-webkit-scrollbar {
   height: 3px;
 }
-.layout-tabs::-webkit-scrollbar-thumb {
+.layout-tabs::-webkit-scrollbar-thumb,
+.watchlist-strip::-webkit-scrollbar-thumb {
   background: #2a3342;
 }
 

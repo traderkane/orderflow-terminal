@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { AppRail } from './components/AppRail';
 import { TopBar } from './components/TopBar';
 import { LayoutTabs } from './components/LayoutTabs';
+import { WatchlistStrip } from './components/WatchlistStrip';
 import { TerminalGrid } from './components/TerminalGrid';
 import { WidgetLauncher } from './components/WidgetLauncher';
 import { AlertsDrawer } from './components/AlertsDrawer';
@@ -43,6 +44,7 @@ export default function App() {
       <AppRail />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar />
+        <WatchlistStrip />
         <LayoutTabs />
         <TerminalGrid />
       </div>

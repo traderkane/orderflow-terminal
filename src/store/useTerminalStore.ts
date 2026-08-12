@@ -55,6 +55,7 @@ import {
   loadChartLayers,
   persistChartLayers,
 } from '../lib/chartLayers';
+import { UI_SYMBOLS } from '../data/venues/symbols';
 
 const LAYOUT_KEY = 'flow-terminal-layout-v8';
 const WIDGETS_KEY = 'flow-terminal-widgets-v8';
@@ -63,6 +64,8 @@ const ALERTS_KEY = 'flow-terminal-alerts-v1';
 const ALERT_HISTORY_KEY = 'flow-terminal-alert-history-v1';
 const TEMPLATES_KEY = 'flow-terminal-templates-v1';
 const ACTIVE_LAYOUT_KEY = 'flow-terminal-active-layout-v1';
+const WATCHLIST_KEY = 'flow-terminal-watchlist-v1';
+const LAST_QUOTES_KEY = 'flow-terminal-last-quotes-v1';
 
 /** Built-in tab ids shown in the layout strip (Default = reset workspace). */
 export const LAYOUT_TAB_DEFAULT_ID = 'builtin-default';
@@ -121,6 +124,57 @@ function persistActiveLayoutId(id: string) {
   localStorage.setItem(ACTIVE_LAYOUT_KEY, id);
 }
 
+export type SymbolQuote = {
+  last: number;
+  changePct24h: number;
+};
+
+const DEFAULT_WATCHLIST: SymbolId[] = ['BTC/USD', 'ETH/USD'];
+
+function loadWatchlist(): SymbolId[] {
+  const raw = loadJson<unknown>(WATCHLIST_KEY, null);
+  if (!Array.isArray(raw)) return [...DEFAULT_WATCHLIST];
+  const allowed = new Set<string>(UI_SYMBOLS);
+  const seen = new Set<SymbolId>();
+  const out: SymbolId[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'string' || !allowed.has(item) || seen.has(item as SymbolId)) continue;
+    seen.add(item as SymbolId);
+    out.push(item as SymbolId);
+  }
+  return out.length ? out : [...DEFAULT_WATCHLIST];
+}
+
+function persistWatchlist(list: SymbolId[]) {
+  localStorage.setItem(WATCHLIST_KEY, JSON.stringify(list));
+}
+
+function loadLastQuotes(): Partial<Record<SymbolId, SymbolQuote>> {
+  const raw = loadJson<Partial<Record<SymbolId, SymbolQuote>>>(LAST_QUOTES_KEY, {});
+  const out: Partial<Record<SymbolId, SymbolQuote>> = {};
+  for (const sym of UI_SYMBOLS) {
+    const q = raw[sym];
+    if (!q || typeof q !== 'object') continue;
+    if (typeof q.last !== 'number' || !Number.isFinite(q.last)) continue;
+    const pct = typeof q.changePct24h === 'number' && Number.isFinite(q.changePct24h) ? q.changePct24h : 0;
+    out[sym] = { last: q.last, changePct24h: pct };
+  }
+  return out;
+}
+
+function persistLastQuotes(quotes: Partial<Record<SymbolId, SymbolQuote>>) {
+  localStorage.setItem(LAST_QUOTES_KEY, JSON.stringify(quotes));
+}
+
+function quotesToLastPrices(quotes: Partial<Record<SymbolId, SymbolQuote>>): Partial<Record<SymbolId, number>> {
+  const out: Partial<Record<SymbolId, number>> = {};
+  for (const sym of UI_SYMBOLS) {
+    const last = quotes[sym]?.last;
+    if (last != null) out[sym] = last;
+  }
+  return out;
+}
+
 function uid(prefix: string) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -168,6 +222,10 @@ interface TerminalState {
   activeLayoutId: string;
   /** Last known mark/last per symbol for the picker. */
   lastPrices: Partial<Record<SymbolId, number>>;
+  /** Cached last + % change per symbol (active live; stale for inactive). */
+  lastQuotes: Partial<Record<SymbolId, SymbolQuote>>;
+  /** Multi-symbol watchlist strip (persisted). */
+  watchlist: SymbolId[];
   toasts: ToastItem[];
 
   initFeed: () => () => void;
@@ -175,6 +233,8 @@ interface TerminalState {
   setChartInterval: (interval: ChartInterval) => void;
   setChartMode: (mode: ChartMode) => void;
   setSymbol: (symbol: SymbolId) => void;
+  addWatchlistSymbol: (symbol: SymbolId) => void;
+  removeWatchlistSymbol: (symbol: SymbolId) => void;
   toggleExchange: (ex: ExchangeId) => void;
   setSpeed: (speed: Speed) => void;
   toggleFeed: () => void;
@@ -269,11 +329,20 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
 
   const onSnap = (snap: FeedSnapshot, extras?: Partial<TerminalState>) => {
     const last = snap.stats?.last;
-    const lastPrices =
-      last != null && Number.isFinite(last)
-        ? { ...get().lastPrices, [snap.symbol]: last }
-        : get().lastPrices;
-    set({ feed: snap, lastPrices, ...extras });
+    const pct = snap.stats?.changePct24h;
+    let lastQuotes = get().lastQuotes;
+    let lastPrices = get().lastPrices;
+    if (last != null && Number.isFinite(last)) {
+      const changePct24h =
+        pct != null && Number.isFinite(pct) ? pct : (lastQuotes[snap.symbol]?.changePct24h ?? 0);
+      lastQuotes = {
+        ...lastQuotes,
+        [snap.symbol]: { last, changePct24h },
+      };
+      lastPrices = { ...lastPrices, [snap.symbol]: last };
+      persistLastQuotes(lastQuotes);
+    }
+    set({ feed: snap, lastPrices, lastQuotes, ...extras });
     get().evaluateAlerts(snap);
   };
 
@@ -354,7 +423,14 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     alertHistory: loadJson<AlertFire[]>(ALERT_HISTORY_KEY, []),
     userTemplates: loadJson<LayoutTemplate[]>(TEMPLATES_KEY, []),
     activeLayoutId: loadActiveLayoutId(),
-    lastPrices: {},
+    ...(() => {
+      const lastQuotes = loadLastQuotes();
+      return {
+        lastQuotes,
+        lastPrices: quotesToLastPrices(lastQuotes),
+        watchlist: loadWatchlist(),
+      };
+    })(),
     toasts: [],
 
     initFeed: () => {
@@ -393,10 +469,40 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     },
 
     setSymbol: (symbol) => {
-      set({ symbol, hoverPrice: null, hoverSource: null, focusPrice: null });
+      const watchlist = get().watchlist.includes(symbol)
+        ? get().watchlist
+        : [...get().watchlist, symbol];
+      if (watchlist !== get().watchlist) persistWatchlist(watchlist);
+      set({ symbol, watchlist, hoverPrice: null, hoverSource: null, focusPrice: null });
       prevMetrics.clear();
       if (get().feedMode === 'live') liveFeed.setSymbol(symbol);
       else mockFeed.setSymbol(symbol);
+    },
+
+    addWatchlistSymbol: (symbol) => {
+      if (!UI_SYMBOLS.includes(symbol)) return;
+      const cur = get().watchlist;
+      if (cur.includes(symbol)) {
+        get().setSymbol(symbol);
+        return;
+      }
+      const watchlist = [...cur, symbol];
+      persistWatchlist(watchlist);
+      set({ watchlist });
+      get().setSymbol(symbol);
+    },
+
+    removeWatchlistSymbol: (symbol) => {
+      const cur = get().watchlist;
+      if (cur.length <= 1 || !cur.includes(symbol)) return;
+      const watchlist = cur.filter((s) => s !== symbol);
+      persistWatchlist(watchlist);
+      if (get().symbol === symbol) {
+        set({ watchlist });
+        get().setSymbol(watchlist[0]!);
+      } else {
+        set({ watchlist });
+      }
     },
 
     toggleExchange: (ex) => {
