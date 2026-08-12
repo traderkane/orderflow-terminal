@@ -51,6 +51,10 @@ import {
   persistVolumePaneMode,
   type VolumePaneMode,
 } from '../lib/tradeCount';
+import {
+  loadChartLayers,
+  persistChartLayers,
+} from '../lib/chartLayers';
 
 const LAYOUT_KEY = 'flow-terminal-layout-v6';
 const WIDGETS_KEY = 'flow-terminal-widgets-v6';
@@ -207,6 +211,8 @@ function stopAll() {
 /** Prior metric samples for cross detection, keyed by alert id. */
 const prevMetrics = new Map<string, number>();
 
+const initialLayers = loadChartLayers();
+
 export const useTerminalStore = create<TerminalState>((set, get) => {
   let unsubData: (() => void) | null = null;
   let unsubStatus: (() => void) | null = null;
@@ -281,16 +287,16 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     feed: null,
     widgets: loadJson(WIDGETS_KEY, DEFAULT_WIDGETS),
     layout: loadJson(LAYOUT_KEY, DEFAULT_LAYOUT),
-    showVwap: true,
+    showVwap: initialLayers.vwap,
     vwapAnchors: loadVwapAnchors(),
     showBarStats: loadShowBarStats(),
     barStatsMetric: loadBarStatsMetric(),
     volumePaneMode: loadVolumePaneMode(),
-    showCvdOverlay: false,
-    showLiqMarkers: true,
-    showHeatmap: true,
-    showProfile: true,
-    showBubbles: true,
+    showCvdOverlay: initialLayers.cvd,
+    showLiqMarkers: initialLayers.liqs,
+    showHeatmap: initialLayers.heatmap,
+    showProfile: initialLayers.profile,
+    showBubbles: initialLayers.bubbles,
     chartMaximized: false,
     launcherOpen: false,
     openPanel: null,
@@ -403,7 +409,10 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
       persist(widgets, layout);
     },
 
-    setShowVwap: (showVwap) => set({ showVwap }),
+    setShowVwap: (showVwap) => {
+      persistChartLayers({ ...loadChartLayers(), vwap: showVwap });
+      set({ showVwap });
+    },
     setVwapAnchors: (vwapAnchors) => {
       persistVwapAnchors(vwapAnchors);
       set({ vwapAnchors });
@@ -420,11 +429,26 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
       persistVolumePaneMode(volumePaneMode);
       set({ volumePaneMode });
     },
-    setShowCvdOverlay: (showCvdOverlay) => set({ showCvdOverlay }),
-    setShowLiqMarkers: (showLiqMarkers) => set({ showLiqMarkers }),
-    setShowHeatmap: (showHeatmap) => set({ showHeatmap }),
-    setShowProfile: (showProfile) => set({ showProfile }),
-    setShowBubbles: (showBubbles) => set({ showBubbles }),
+    setShowCvdOverlay: (showCvdOverlay) => {
+      persistChartLayers({ ...loadChartLayers(), cvd: showCvdOverlay });
+      set({ showCvdOverlay });
+    },
+    setShowLiqMarkers: (showLiqMarkers) => {
+      persistChartLayers({ ...loadChartLayers(), liqs: showLiqMarkers });
+      set({ showLiqMarkers });
+    },
+    setShowHeatmap: (showHeatmap) => {
+      persistChartLayers({ ...loadChartLayers(), heatmap: showHeatmap });
+      set({ showHeatmap });
+    },
+    setShowProfile: (showProfile) => {
+      persistChartLayers({ ...loadChartLayers(), profile: showProfile });
+      set({ showProfile });
+    },
+    setShowBubbles: (showBubbles) => {
+      persistChartLayers({ ...loadChartLayers(), bubbles: showBubbles });
+      set({ showBubbles });
+    },
     setChartMaximized: (chartMaximized) => set({ chartMaximized }),
     toggleChartMaximized: () =>
       set((s) => ({ chartMaximized: !s.chartMaximized })),

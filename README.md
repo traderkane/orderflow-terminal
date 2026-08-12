@@ -33,7 +33,7 @@ npm run preview
 
 ## Widgets
 
-1. **Chart** — TradingView/MMT-style workspace: **Candles | Footprint** mode switch; left icon drawing rail (select / H-Line / Trend / Rect / Fib / Magnet / Eraser / Clear), bottom layer dock, TF pills **1m / 5m / 15m / 1h**; Footprint mode paints clustered sell|buy volumes inside each bar with delta tint + imbalance outlines (best at 1m; denser/compact on higher TFs); selected-drawing properties mini-panel (color / width / extend L-R / delete); magnet snap to candle OHLC+mid; maximize chart from header (**F** / Esc); drag-to-move drawings with handles; layers Heatmap / VPVR / Bubbles / **session VWAP** (Day/Week/24h anchors, multi-plot) / **Bars** (volume|delta intensity) / **Count** (buy vs sell trade-count dual histogram) / CVD / Liqs; drawings (+styles) persisted per symbol
+1. **Chart** — TradingView/MMT-style workspace: **Candles | Footprint** mode switch; left icon drawing rail (select / H-Line / Trend / Rect / Fib / Magnet / Eraser / Clear), bottom **layer dock** (favorites **Heatmap / VWAP / CVD** + **Layers** checklist for Profile / Bubbles / Bars / Count / Liqs), TF pills **1m / 5m / 15m / 1h**; Footprint mode paints clustered sell|buy volumes inside each bar with delta tint + imbalance outlines (best at 1m; denser/compact on higher TFs); selected-drawing properties mini-panel (color / width / extend L-R / delete); magnet snap to candle OHLC+mid; maximize chart from header (**F** / Esc); drag-to-move drawings with handles; **session VWAP** (Day/Week/24h anchors, multi-plot) / **Bars** (volume|delta intensity) / **Count** (buy vs sell trade-count dual histogram); layer visibility persisted (`flow-terminal-chart-layers-v1`); drawings (+styles) persisted per symbol
 2. **Order Book / DOM** — bids/asks, depth bars, spread
 3. **Trades Tape** — scrolling aggressor buys/sells with size highlighting
 4. **Order Book Heatmap** — canvas time × price liquidity
@@ -75,8 +75,10 @@ Resilience notes:
 
 ## Session VWAP & bar stats
 
-Chart layer dock:
+Chart layer dock (MMT-style):
 
+- Favorites on the dock: **Heatmap**, **VWAP▾**, **CVD**
+- **Layers** opens a compact checklist — **Overlays** (Profile, Bubbles, Bars) and **Studies** (Count, Liqs). Visibility for Heatmap / Profile / Bubbles / VWAP / CVD / Liqs persists as `flow-terminal-chart-layers-v1`.
 - **VWAP** — session-anchored lines computed from candle typical price × volume (`(H+L+C)/3`). Anchors (multi-select, persisted as `flow-terminal-vwap-anchors-v1`):
   - **Session / Day** — resets at UTC midnight (solid gold)
   - **Week** — resets Monday 00:00 UTC (dashed violet)

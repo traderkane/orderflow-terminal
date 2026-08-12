@@ -161,6 +161,7 @@ export function ChartWidget() {
   const [magnetOn, setMagnetOn] = useState(true);
   const [vwapMenuOpen, setVwapMenuOpen] = useState(false);
   const [barStatsMenuOpen, setBarStatsMenuOpen] = useState(false);
+  const [layersMenuOpen, setLayersMenuOpen] = useState(false);
 
   const toolRef = useRef<DrawingTool>('select');
   const drawingsRef = useRef<ChartDrawing[]>([]);
@@ -1377,17 +1378,19 @@ export function ChartWidget() {
   ]);
 
   useEffect(() => {
-    if (!vwapMenuOpen && !barStatsMenuOpen) return;
+    if (!vwapMenuOpen && !barStatsMenuOpen && !layersMenuOpen) return;
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null;
       if (t?.closest('[data-layer-menus]')) return;
       setVwapMenuOpen(false);
       setBarStatsMenuOpen(false);
+      setLayersMenuOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setVwapMenuOpen(false);
         setBarStatsMenuOpen(false);
+        setLayersMenuOpen(false);
       }
     };
     window.addEventListener('mousedown', onDown);
@@ -1396,7 +1399,7 @@ export function ChartWidget() {
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('keydown', onKey);
     };
-  }, [vwapMenuOpen, barStatsMenuOpen]);
+  }, [vwapMenuOpen, barStatsMenuOpen, layersMenuOpen]);
 
   useEffect(() => {
     scheduleOverlays();
@@ -1567,6 +1570,13 @@ export function ChartWidget() {
   const showExtend =
     selectedDrawing?.type === 'hline' || selectedDrawing?.type === 'trend';
 
+  const layersExtraCount =
+    (showProfile ? 1 : 0) +
+    (showBubbles ? 1 : 0) +
+    (showBarStats ? 1 : 0) +
+    (volumePaneMode === 'count' ? 1 : 0) +
+    (showLiqMarkers ? 1 : 0);
+
   return (
     <div className={`chart-workspace relative flex h-full min-h-0 ${cursorClass}`}>
       {/* Vertical drawing toolbar — MMT/TV style */}
@@ -1661,12 +1671,15 @@ export function ChartWidget() {
           )}
         </div>
 
-        {/* Layer dock — secondary, bottom, doesn't fight drawings */}
+        {/* Layer dock — favorites + Layers checklist (MMT-style) */}
         <div data-layer-menus className="pointer-events-none absolute bottom-1.5 left-1.5 right-14 z-10 flex justify-start gap-1">
-          <div className="pointer-events-auto flex h-6 items-stretch overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
-            <LayerChip label="Heatmap" short="HM" on={showHeatmap} onClick={() => setShowHeatmap(!showHeatmap)} />
-            <LayerChip label="Profile" short="VP" on={showProfile} onClick={() => setShowProfile(!showProfile)} />
-            <LayerChip label="Bubbles" short="Bub" on={showBubbles} onClick={() => setShowBubbles(!showBubbles)} />
+          <div className="pointer-events-auto flex h-7 items-stretch overflow-hidden rounded-[2px] border border-terminal-border bg-black/55 backdrop-blur-[2px]">
+            <LayerChip
+              label="Heatmap"
+              short="HM"
+              on={showHeatmap}
+              onClick={() => setShowHeatmap(!showHeatmap)}
+            />
             <LayerChip
               label="VWAP"
               short="VWAP"
@@ -1675,51 +1688,154 @@ export function ChartWidget() {
                 const next = !showVwap;
                 setShowVwap(next);
                 setVwapMenuOpen(next);
-                if (next) setBarStatsMenuOpen(false);
+                if (next) {
+                  setBarStatsMenuOpen(false);
+                  setLayersMenuOpen(false);
+                }
               }}
               onGear={
                 showVwap
                   ? () => {
                       setVwapMenuOpen((v) => !v);
                       setBarStatsMenuOpen(false);
+                      setLayersMenuOpen(false);
                     }
                   : undefined
               }
               gearTitle="VWAP anchors"
             />
             <LayerChip
-              label="Bars"
-              short="Bar"
-              on={showBarStats}
+              label="CVD"
+              short="CVD"
+              on={showCvdOverlay}
+              onClick={() => setShowCvdOverlay(!showCvdOverlay)}
+            />
+            <div className="mx-0.5 my-1 w-px self-stretch bg-terminal-border/80" />
+            <button
+              type="button"
+              title="Chart layers — overlays & studies"
               onClick={() => {
-                const next = !showBarStats;
-                setShowBarStats(next);
-                setBarStatsMenuOpen(next);
-                if (next) setVwapMenuOpen(false);
+                setLayersMenuOpen((v) => !v);
+                setVwapMenuOpen(false);
+                setBarStatsMenuOpen(false);
               }}
-              onGear={
-                showBarStats
-                  ? () => {
-                      setBarStatsMenuOpen((v) => !v);
-                      setVwapMenuOpen(false);
-                    }
-                  : undefined
-              }
-              gearTitle="Bar stats metric"
-            />
-            <LayerChip
-              label="Count"
-              short="Cnt"
-              on={volumePaneMode === 'count'}
-              onClick={() =>
-                setVolumePaneMode(volumePaneMode === 'count' ? 'volume' : 'count')
-              }
-            />
-            <LayerChip label="CVD" short="CVD" on={showCvdOverlay} onClick={() => setShowCvdOverlay(!showCvdOverlay)} />
-            <LayerChip label="Liqs" short="Liq" on={showLiqMarkers} onClick={() => setShowLiqMarkers(!showLiqMarkers)} />
+              className={`inline-flex items-center gap-1 px-1.5 text-[9px] font-semibold uppercase tracking-wider ${
+                layersMenuOpen
+                  ? 'bg-accent/20 text-accent ring-1 ring-inset ring-accent/40'
+                  : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
+              }`}
+            >
+              <IconLayers />
+              <span className="hidden sm:inline">Layers</span>
+              <span className="sm:hidden">Lay</span>
+              {layersExtraCount > 0 && (
+                <span className="rounded-[2px] bg-white/[0.06] px-1 font-mono text-[8px] text-zinc-400">
+                  {layersExtraCount}
+                </span>
+              )}
+              <span className="text-[8px] opacity-70">▾</span>
+            </button>
           </div>
+
+          {layersMenuOpen && (
+            <div className="pointer-events-auto absolute bottom-9 left-0 z-20 w-[188px] rounded-[2px] border border-terminal-border bg-black/92 p-1 shadow-panel backdrop-blur-[2px]">
+              <div className="flex items-center gap-1.5 px-1.5 pb-1 pt-0.5">
+                <IconLayers className="text-zinc-500" />
+                <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">
+                  Layers
+                </span>
+              </div>
+
+              <div className="px-1.5 pb-0.5 pt-1 font-mono text-[8px] uppercase tracking-[0.14em] text-zinc-600">
+                Overlays
+              </div>
+              <LayerCheck
+                label="Profile"
+                hint="VPVR volume profile"
+                on={showProfile}
+                onClick={() => setShowProfile(!showProfile)}
+              />
+              <LayerCheck
+                label="Bubbles"
+                hint="Aggressor size bubbles"
+                on={showBubbles}
+                onClick={() => setShowBubbles(!showBubbles)}
+              />
+              <LayerCheck
+                label="Bars"
+                hint="Bar stats intensity"
+                on={showBarStats}
+                onClick={() => {
+                  const next = !showBarStats;
+                  setShowBarStats(next);
+                  if (!next) setBarStatsMenuOpen(false);
+                }}
+                onGear={
+                  showBarStats
+                    ? () => {
+                        setBarStatsMenuOpen((v) => !v);
+                        setVwapMenuOpen(false);
+                      }
+                    : undefined
+                }
+                gearOpen={barStatsMenuOpen}
+                gearTitle="Bar stats metric"
+              />
+              {showBarStats && barStatsMenuOpen && (
+                <div className="mb-0.5 ml-5 mr-0.5 rounded-[2px] border border-terminal-border/70 bg-black/50 p-0.5">
+                  {([
+                    ['volume', 'Volume'],
+                    ['delta', 'Delta'],
+                  ] as [BarStatsMetric, string][]).map(([id, label]) => {
+                    const on = barStatsMetric === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        title={`Grade candles by ${label.toLowerCase()} vs recent average`}
+                        onClick={() => setBarStatsMetric(id)}
+                        className={`flex w-full items-center rounded-[2px] px-1.5 py-0.5 text-left font-mono text-[10px] uppercase tracking-wider ${
+                          on
+                            ? 'bg-white/[0.06] text-zinc-100'
+                            : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
+                        }`}
+                      >
+                        {label}
+                        {on && <span className="ml-auto text-accent">✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="mx-1 my-1 h-px bg-terminal-border/70" />
+
+              <div className="px-1.5 pb-0.5 pt-0.5 font-mono text-[8px] uppercase tracking-[0.14em] text-zinc-600">
+                Studies
+              </div>
+              <LayerCheck
+                label="Count"
+                hint="Buy vs sell trade counts"
+                on={volumePaneMode === 'count'}
+                onClick={() =>
+                  setVolumePaneMode(volumePaneMode === 'count' ? 'volume' : 'count')
+                }
+              />
+              <LayerCheck
+                label="Liqs"
+                hint="Liquidation markers"
+                on={showLiqMarkers}
+                onClick={() => setShowLiqMarkers(!showLiqMarkers)}
+              />
+
+              <div className="mt-1 border-t border-terminal-border/70 px-1.5 pt-1 font-mono text-[8px] leading-snug text-zinc-600">
+                Favorites on dock · Heatmap / VWAP / CVD
+              </div>
+            </div>
+          )}
+
           {showVwap && vwapMenuOpen && (
-            <div className="pointer-events-auto absolute bottom-8 left-0 z-20 min-w-[148px] rounded-[2px] border border-terminal-border bg-black/90 p-1 shadow-panel backdrop-blur-[2px]">
+            <div className="pointer-events-auto absolute bottom-9 left-0 z-20 min-w-[148px] rounded-[2px] border border-terminal-border bg-black/90 p-1 shadow-panel backdrop-blur-[2px]">
               <div className="px-1.5 pb-1 pt-0.5 font-mono text-[9px] uppercase tracking-wider text-zinc-500">
                 VWAP anchor
               </div>
@@ -1749,35 +1865,6 @@ export function ChartWidget() {
               <div className="mt-0.5 border-t border-terminal-border/80 px-1.5 pt-1 font-mono text-[9px] leading-snug text-zinc-600">
                 Day+Week ok · limited by candle history
               </div>
-            </div>
-          )}
-          {showBarStats && barStatsMenuOpen && (
-            <div className="pointer-events-auto absolute bottom-8 left-[210px] z-20 min-w-[120px] rounded-[2px] border border-terminal-border bg-black/90 p-1 shadow-panel backdrop-blur-[2px] sm:left-[260px]">
-              <div className="px-1.5 pb-1 pt-0.5 font-mono text-[9px] uppercase tracking-wider text-zinc-500">
-                Bar stats
-              </div>
-              {([
-                ['volume', 'Volume'],
-                ['delta', 'Delta'],
-              ] as [BarStatsMetric, string][]).map(([id, label]) => {
-                const on = barStatsMetric === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    title={`Grade candles by ${label.toLowerCase()} vs recent average`}
-                    onClick={() => setBarStatsMetric(id)}
-                    className={`flex w-full items-center rounded-[2px] px-1.5 py-1 text-left font-mono text-[10px] uppercase tracking-wider ${
-                      on
-                        ? 'bg-white/[0.06] text-zinc-100'
-                        : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
-                    }`}
-                  >
-                    {label}
-                    {on && <span className="ml-auto text-accent">✓</span>}
-                  </button>
-                );
-              })}
             </div>
           )}
         </div>
@@ -1998,8 +2085,8 @@ function LayerChip({
         onClick={onClick}
         className={`px-1.5 text-[9px] font-semibold uppercase tracking-wider ${
           on
-            ? 'bg-up/15 text-up'
-            : 'text-zinc-600 hover:bg-white/[0.03] hover:text-zinc-300'
+            ? 'bg-accent/20 text-accent'
+            : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
         }`}
       >
         <span className="hidden sm:inline">{label}</span>
@@ -2015,14 +2102,113 @@ function LayerChip({
           }}
           className={`border-l border-terminal-border/70 px-1 text-[9px] ${
             on
-              ? 'bg-up/10 text-up/90 hover:text-up'
-              : 'text-zinc-600 hover:bg-white/[0.03] hover:text-zinc-300'
+              ? 'bg-accent/10 text-accent/90 hover:text-accent'
+              : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
           }`}
         >
           ▾
         </button>
       )}
     </span>
+  );
+}
+
+function LayerCheck({
+  label,
+  hint,
+  on,
+  onClick,
+  onGear,
+  gearOpen,
+  gearTitle,
+}: {
+  label: string;
+  hint: string;
+  on: boolean;
+  onClick: () => void;
+  onGear?: () => void;
+  gearOpen?: boolean;
+  gearTitle?: string;
+}) {
+  return (
+    <div className="flex items-stretch gap-0.5">
+      <button
+        type="button"
+        title={hint}
+        onClick={onClick}
+        className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-[2px] px-1.5 py-1 text-left font-mono text-[10px] uppercase tracking-wider ${
+          on
+            ? 'bg-white/[0.06] text-zinc-100'
+            : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
+        }`}
+      >
+        <span
+          className={`flex h-3 w-3 shrink-0 items-center justify-center rounded-[2px] border ${
+            on
+              ? 'border-accent/60 bg-accent/25 text-accent'
+              : 'border-terminal-border bg-black/40 text-transparent'
+          }`}
+        >
+          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden>
+            <path d="M1.5 4.2L3.2 5.8L6.5 2.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+        <span className="truncate">{label}</span>
+      </button>
+      {onGear && (
+        <button
+          type="button"
+          title={gearTitle ?? `${label} options`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onGear();
+          }}
+          className={`rounded-[2px] px-1.5 text-[9px] ${
+            gearOpen || on
+              ? 'text-accent hover:bg-accent/10'
+              : 'text-zinc-600 hover:bg-white/[0.03] hover:text-zinc-300'
+          }`}
+        >
+          ▾
+        </button>
+      )}
+    </div>
+  );
+}
+
+function IconLayers({ className }: { className?: string }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      aria-hidden
+      className={className}
+    >
+      <path
+        d="M6 1.5L10.5 4 6 6.5 1.5 4 6 1.5z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M1.5 6L6 8.5 10.5 6"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.85"
+      />
+      <path
+        d="M1.5 8L6 10.5 10.5 8"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.55"
+      />
+    </svg>
   );
 }
 
