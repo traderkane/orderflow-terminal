@@ -42,7 +42,8 @@ npm run preview
 7. **Footprint** — candle-aligned clustered bid/ask volume with imbalance highlights
 8. **Liquidations** — forced order feed
 9. **Liq Map** — modelled leverage-ladder liquidation density around mark
-10. **Stats** — last, change, funding, OI, spread, volume
+10. **TPO / Profile** — Market Profile letters (time spent at price), POC + value area
+11. **Stats** — last, change, funding, OI, spread, volume
 
 ## Live Binance feed
 

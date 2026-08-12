@@ -116,6 +116,30 @@ export interface MarketStats {
   mid: number;
 }
 
+
+/** One price row in a TPO / Market Profile. */
+export interface TpoLevel {
+  price: number;
+  letters: string[];
+  count: number;
+  inValueArea: boolean;
+  isPoc: boolean;
+}
+
+/** Session (or rolling-window) Time Price Opportunity profile. */
+export interface TpoProfile {
+  levels: TpoLevel[];
+  periods: { letter: string; startTime: number; endTime: number }[];
+  poc: number;
+  vah: number;
+  val: number;
+  totalPrints: number;
+  periodSec: number;
+  tick: number;
+  startTime: number;
+  endTime: number;
+}
+
 export type WidgetType =
   | 'chart'
   | 'orderbook'
@@ -126,6 +150,7 @@ export type WidgetType =
   | 'footprint'
   | 'liquidations'
   | 'liquidationMap'
+  | 'tpo'
   | 'stats';
 
 export interface WidgetInstance {

@@ -12,8 +12,8 @@ import type {
   WidgetType,
 } from '../types/market';
 
-const LAYOUT_KEY = 'flow-terminal-layout-v4';
-const WIDGETS_KEY = 'flow-terminal-widgets-v4';
+const LAYOUT_KEY = 'flow-terminal-layout-v5';
+const WIDGETS_KEY = 'flow-terminal-widgets-v5';
 const FEED_MODE_KEY = 'flow-terminal-feed-mode';
 
 const DEFAULT_WIDGETS: WidgetInstance[] = [
@@ -25,6 +25,7 @@ const DEFAULT_WIDGETS: WidgetInstance[] = [
   { id: 'cvd', type: 'cvd' },
   { id: 'volumeProfile', type: 'volumeProfile' },
   { id: 'liquidationMap', type: 'liquidationMap' },
+  { id: 'tpo', type: 'tpo' },
   { id: 'liquidations', type: 'liquidations' },
   { id: 'stats', type: 'stats' },
 ];
@@ -35,11 +36,12 @@ const DEFAULT_LAYOUT: LayoutItem[] = [
   { i: 'orderbook', x: 10, y: 0, w: 2, h: 6, minW: 2, minH: 4 },
   { i: 'trades', x: 10, y: 6, w: 2, h: 6, minW: 2, minH: 4 },
   { i: 'heatmap', x: 0, y: 12, w: 3, h: 6, minW: 3, minH: 4 },
-  { i: 'cvd', x: 3, y: 12, w: 3, h: 6, minW: 2, minH: 4 },
-  { i: 'volumeProfile', x: 6, y: 12, w: 2, h: 6, minW: 2, minH: 4 },
-  { i: 'liquidationMap', x: 8, y: 12, w: 2, h: 6, minW: 2, minH: 4 },
-  { i: 'liquidations', x: 10, y: 12, w: 2, h: 6, minW: 2, minH: 3 },
-  { i: 'stats', x: 0, y: 18, w: 12, h: 3, minW: 4, minH: 2 },
+  { i: 'cvd', x: 3, y: 12, w: 2, h: 6, minW: 2, minH: 4 },
+  { i: 'volumeProfile', x: 5, y: 12, w: 2, h: 6, minW: 2, minH: 4 },
+  { i: 'liquidationMap', x: 7, y: 12, w: 2, h: 6, minW: 2, minH: 4 },
+  { i: 'liquidations', x: 9, y: 12, w: 3, h: 6, minW: 2, minH: 3 },
+  { i: 'tpo', x: 0, y: 18, w: 6, h: 8, minW: 3, minH: 5 },
+  { i: 'stats', x: 6, y: 18, w: 6, h: 3, minW: 4, minH: 2 },
 ];
 
 function loadJson<T>(key: string, fallback: T): T {
@@ -272,6 +274,10 @@ export const WIDGET_META: Record<
   liquidationMap: {
     title: 'Liq Map',
     description: 'Modelled leverage liquidation clusters',
+  },
+  tpo: {
+    title: 'TPO / Profile',
+    description: 'Time Price Opportunity market profile',
   },
   stats: { title: 'Stats', description: 'Last, funding, OI, spread' },
 };

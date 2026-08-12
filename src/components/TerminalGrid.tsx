@@ -11,6 +11,7 @@ import { VolumeProfileWidget } from '../widgets/VolumeProfileWidget';
 import { FootprintWidget } from '../widgets/FootprintWidget';
 import { LiquidationsWidget } from '../widgets/LiquidationsWidget';
 import { LiquidationMapWidget } from '../widgets/LiquidationMapWidget';
+import { TpoWidget } from '../widgets/TpoWidget';
 import { StatsWidget } from '../widgets/StatsWidget';
 import type { LayoutItem, WidgetType } from '../types/market';
 import 'react-grid-layout/css/styles.css';
@@ -36,6 +37,8 @@ function renderWidget(type: WidgetType) {
       return <LiquidationsWidget />;
     case 'liquidationMap':
       return <LiquidationMapWidget />;
+    case 'tpo':
+      return <TpoWidget />;
     case 'stats':
       return <StatsWidget />;
   }
