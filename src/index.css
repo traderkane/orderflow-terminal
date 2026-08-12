@@ -256,6 +256,206 @@ select {
 }
 
 
+/* TPO / Market Profile — dense MMT-like letter profile */
+.tpo-widget {
+  background: transparent;
+}
+.tpo-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.tpo-row {
+  display: grid;
+  grid-template-columns: 4.6rem minmax(0, 1fr) 2.6rem;
+  align-items: center;
+  column-gap: 4px;
+  min-height: 13px;
+  padding: 0 2px;
+  border-radius: 1px;
+  border-left: 2px solid transparent;
+}
+.tpo-row-va {
+  background: rgba(56, 189, 248, 0.045);
+  box-shadow: inset 0 -1px 0 rgba(56, 189, 248, 0.06);
+}
+.tpo-row-poc {
+  background: rgba(240, 185, 11, 0.1);
+  border-left-color: #f0b90b;
+  box-shadow: inset 0 0 0 1px rgba(240, 185, 11, 0.18);
+}
+.tpo-row-last {
+  background: color-mix(in srgb, rgba(255, 255, 255, 0.04) 70%, transparent);
+}
+.tpo-row-poc.tpo-row-last {
+  background: rgba(240, 185, 11, 0.14);
+}
+.tpo-price {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  width: 100%;
+  padding-right: 2px;
+  color: #52525b;
+  font-size: 9px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.tpo-price-poc {
+  color: #f0b90b;
+  font-weight: 700;
+}
+.tpo-price-last {
+  color: #e4e4e7;
+  font-weight: 600;
+}
+.tpo-price-va-edge {
+  color: #7dd3fc;
+  font-weight: 600;
+}
+.tpo-last-caret {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  border-left: 4px solid #f0b90b;
+  flex-shrink: 0;
+}
+.tpo-letters-wrap {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  min-height: 12px;
+}
+.tpo-hist {
+  position: absolute;
+  inset: 1px auto 1px 0;
+  border-radius: 1px;
+  background: rgba(161, 161, 170, 0.07);
+  pointer-events: none;
+}
+.tpo-hist-va {
+  background: rgba(56, 189, 248, 0.1);
+}
+.tpo-hist-poc {
+  background: rgba(240, 185, 11, 0.14);
+}
+.tpo-letters {
+  position: relative;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 1px;
+  min-height: 12px;
+  padding: 0 1px;
+  overflow: hidden;
+}
+.tpo-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 11px;
+  height: 11px;
+  padding: 0 1px;
+  border-radius: 1px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  user-select: none;
+}
+.tpo-letter-poc {
+  background: rgba(240, 185, 11, 0.32);
+  color: #fde68a;
+  box-shadow: inset 0 0 0 1px rgba(240, 185, 11, 0.45);
+}
+.tpo-letter-va {
+  background: rgba(56, 189, 248, 0.16);
+  color: #bae6fd;
+}
+.tpo-letter-ib {
+  background: rgba(167, 139, 250, 0.22);
+  color: #ddd6fe;
+  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.35);
+}
+.tpo-letter-out {
+  background: rgba(39, 39, 42, 0.85);
+  color: #71717a;
+}
+.tpo-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.tpo-count {
+  min-width: 1rem;
+  text-align: right;
+  color: #3f3f46;
+  font-variant-numeric: tabular-nums;
+  font-size: 8px;
+}
+.tpo-row-poc .tpo-count,
+.tpo-row-va .tpo-count {
+  color: #52525b;
+}
+.tpo-edge-tag {
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #38bdf8;
+  line-height: 1;
+}
+.tpo-edge-poc {
+  color: #f0b90b;
+}
+.tpo-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+}
+.tpo-swatch-poc {
+  background: rgba(240, 185, 11, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(240, 185, 11, 0.55);
+}
+.tpo-swatch-va {
+  background: rgba(56, 189, 248, 0.35);
+}
+.tpo-swatch-ib {
+  background: rgba(167, 139, 250, 0.4);
+}
+
+html[data-theme="light"] .tpo-row-va {
+  background: rgba(14, 165, 233, 0.06);
+}
+html[data-theme="light"] .tpo-row-poc {
+  background: rgba(180, 130, 0, 0.1);
+}
+html[data-theme="light"] .tpo-letter-out {
+  background: rgba(228, 230, 235, 0.95);
+  color: #6b7280;
+}
+html[data-theme="light"] .tpo-price {
+  color: #6b7280;
+}
+html[data-theme="light"] .tpo-price-last {
+  color: #1a1d23;
+}
+html[data-theme="light"] .tpo-count {
+  color: #9ca3af;
+}
+
+
+
 /* Chart maximize — fill workspace, hide sibling widgets (keep mounted) */
 .grid-chart-maximized {
   position: relative;

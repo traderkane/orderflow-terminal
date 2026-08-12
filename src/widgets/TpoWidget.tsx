@@ -8,7 +8,7 @@ import {
 import { intervalToSec } from '../lib/chartIntervals';
 import { useTerminalStore } from '../store/useTerminalStore';
 
-const MAX_ROWS = 48;
+const MAX_ROWS = 56;
 const MAX_CANDLES = 180;
 
 function fmtPrice(p: number, tick: number): string {
@@ -19,6 +19,7 @@ function fmtPrice(p: number, tick: number): string {
 
 /**
  * MMT-style TPO / Market Profile — letters show time spent at each price.
+ * Visual-only: denser letter blocks, clear POC/VA/IB, price axis + last marker.
  */
 export function TpoWidget() {
   const candles = useTerminalStore((s) => s.feed?.candles) ?? [];
@@ -65,69 +66,86 @@ export function TpoWidget() {
     profile.periods.slice(0, Math.min(2, profile.periods.length)).map((p) => p.letter),
   );
 
+  const nearTick = profile.tick * 0.51;
+  const isNear = (price: number) => last > 0 && Math.abs(price - last) <= nearTick;
+  const isVah = (price: number) => Math.abs(price - profile.vah) <= nearTick;
+  const isVal = (price: number) => Math.abs(price - profile.val) <= nearTick;
+
   return (
-    <div className="flex h-full flex-col overflow-hidden font-mono text-[10px] leading-[1.1]">
-      <div className="mb-0.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 border-b border-terminal-border/60 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em] text-terminal-label">
-        <span title="No separate TPO timeframe — uses chart candles. Footprint stays 1m.">
-          TPO · chart TF · {formatPeriodLabel(profile.periodSec)} brackets · tick{' '}
-          {profile.tick}
+    <div className="tpo-widget flex h-full flex-col overflow-hidden font-mono text-[9px] leading-[1.05]">
+      <div className="panel-colhead flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+        <span
+          className="min-w-0 truncate"
+          title="No separate TPO timeframe — uses chart candles. Footprint stays 1m."
+        >
+          TPO · {formatPeriodLabel(profile.periodSec)} · tick {profile.tick}
         </span>
-        <span className="normal-case tracking-normal text-zinc-400">
-          <span className="text-amber-300">POC {fmtPrice(profile.poc, profile.tick)}</span>
-          <span className="mx-1.5 text-zinc-600">|</span>
-          VA {fmtPrice(profile.val, profile.tick)}–{fmtPrice(profile.vah, profile.tick)}
+        <span className="flex shrink-0 items-center gap-1.5 font-mono text-[9px] normal-case tracking-normal">
+          <span className="font-semibold text-accent tabular-nums">
+            POC {fmtPrice(profile.poc, profile.tick)}
+          </span>
+          <span className="text-zinc-700">·</span>
+          <span className="tabular-nums text-sky-300/90">
+            VA {fmtPrice(profile.val, profile.tick)}–{fmtPrice(profile.vah, profile.tick)}
+          </span>
         </span>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-1 pb-1">
-        <div className="space-y-px">
+      <div className="min-h-0 flex-1 overflow-auto px-0.5 pb-0.5">
+        <div className="tpo-grid">
           {view.levels.map((lvl) => {
-            const near =
-              last > 0 && Math.abs(lvl.price - last) <= profile.tick * 0.51;
-            const widthPct = (lvl.count / view.maxCount) * 100;
+            const near = isNear(lvl.price);
+            const vah = isVah(lvl.price);
+            const val = isVal(lvl.price);
+            const widthPct = Math.max(4, (lvl.count / view.maxCount) * 100);
+            const rowClass = [
+              'tpo-row',
+              lvl.isPoc ? 'tpo-row-poc' : '',
+              !lvl.isPoc && lvl.inValueArea ? 'tpo-row-va' : '',
+              near ? 'tpo-row-last' : '',
+            ]
+              .filter(Boolean)
+              .join(' ');
+
             return (
-              <div
-                key={lvl.price}
-                className={`flex items-center gap-1 rounded-[2px] px-0.5 ${
-                  lvl.isPoc
-                    ? 'bg-amber-400/10'
-                    : lvl.inValueArea
-                      ? 'bg-white/[0.03]'
-                      : ''
-                } ${near ? 'ring-1 ring-inset ring-white/10' : ''}`}
-              >
+              <div key={lvl.price} className={rowClass}>
                 <span
-                  className={`w-[4.5rem] shrink-0 text-right tabular-nums ${
+                  className={`tpo-price ${
                     lvl.isPoc
-                      ? 'font-semibold text-amber-300'
+                      ? 'tpo-price-poc'
                       : near
-                        ? 'text-zinc-100'
-                        : 'text-zinc-500'
+                        ? 'tpo-price-last'
+                        : vah || val
+                          ? 'tpo-price-va-edge'
+                          : ''
                   }`}
                 >
+                  {near && <i className="tpo-last-caret" aria-hidden />}
                   {fmtPrice(lvl.price, profile.tick)}
                 </span>
-                <div className="relative min-w-0 flex-1">
+
+                <div className="tpo-letters-wrap">
                   <div
-                    className="absolute inset-y-0 left-0 rounded-[2px] bg-sky-400/10"
+                    className={`tpo-hist ${lvl.isPoc ? 'tpo-hist-poc' : lvl.inValueArea ? 'tpo-hist-va' : ''}`}
                     style={{ width: `${widthPct}%` }}
                   />
-                  <div className="relative flex flex-wrap gap-[1px] py-[1px] pl-0.5">
+                  <div className="tpo-letters">
                     {lvl.letters.map((ch) => {
                       const ib = ibLetters.has(ch);
+                      const letterClass = [
+                        'tpo-letter',
+                        lvl.isPoc ? 'tpo-letter-poc' : '',
+                        !lvl.isPoc && ib ? 'tpo-letter-ib' : '',
+                        !lvl.isPoc && !ib && lvl.inValueArea ? 'tpo-letter-va' : '',
+                        !lvl.isPoc && !ib && !lvl.inValueArea ? 'tpo-letter-out' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ');
                       return (
                         <span
                           key={`${lvl.price}-${ch}`}
-                          className={`inline-flex h-[14px] min-w-[12px] items-center justify-center rounded-[2px] px-[2px] text-[10px] font-semibold ${
-                            lvl.isPoc
-                              ? 'bg-amber-400/25 text-amber-200'
-                              : ib
-                                ? 'bg-violet-400/20 text-violet-200'
-                                : lvl.inValueArea
-                                  ? 'bg-sky-400/15 text-sky-100/90'
-                                  : 'bg-zinc-800/80 text-zinc-400'
-                          }`}
-                          title={`Period ${ch}`}
+                          className={letterClass}
+                          title={`Period ${ch}${ib ? ' · IB' : ''}${lvl.isPoc ? ' · POC' : ''}`}
                         >
                           {ch}
                         </span>
@@ -135,8 +153,13 @@ export function TpoWidget() {
                     })}
                   </div>
                 </div>
-                <span className="w-5 shrink-0 text-right tabular-nums text-zinc-600">
-                  {lvl.count}
+
+                <span className="tpo-meta">
+                  {(vah || val) && (
+                    <span className="tpo-edge-tag">{vah ? 'VAH' : 'VAL'}</span>
+                  )}
+                  {lvl.isPoc && !vah && !val && <span className="tpo-edge-tag tpo-edge-poc">POC</span>}
+                  <span className="tpo-count">{lvl.count}</span>
                 </span>
               </div>
             );
@@ -144,18 +167,18 @@ export function TpoWidget() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-terminal-border/80 px-1.5 py-0.5 text-[9px] text-terminal-label">
-        <span>
-          <span className="text-amber-300">POC</span> max time
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 border-t border-terminal-border/80 px-1.5 py-0.5 text-[9px] text-terminal-label">
+        <span className="inline-flex items-center gap-1">
+          <i className="tpo-swatch tpo-swatch-poc" /> POC
         </span>
-        <span>
-          <span className="text-sky-300">VA</span> ~70%
+        <span className="inline-flex items-center gap-1">
+          <i className="tpo-swatch tpo-swatch-va" /> VA ~70%
         </span>
-        <span>
-          <span className="text-violet-300">A–B</span> initial balance
+        <span className="inline-flex items-center gap-1">
+          <i className="tpo-swatch tpo-swatch-ib" /> IB A–B
         </span>
-        <span className="text-zinc-600">
-          {profile.periods.length} periods · {profile.totalPrints} prints
+        <span className="ml-auto tabular-nums text-zinc-600">
+          {profile.periods.length}p · {profile.totalPrints} prints
         </span>
       </div>
     </div>
