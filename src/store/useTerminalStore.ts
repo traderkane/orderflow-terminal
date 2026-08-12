@@ -57,8 +57,8 @@ import {
 } from '../lib/chartLayers';
 import { UI_SYMBOLS } from '../data/venues/symbols';
 
-const LAYOUT_KEY = 'flow-terminal-layout-v8';
-const WIDGETS_KEY = 'flow-terminal-widgets-v8';
+const LAYOUT_KEY = 'flow-terminal-layout-v9';
+const WIDGETS_KEY = 'flow-terminal-widgets-v9';
 const FEED_MODE_KEY = 'flow-terminal-feed-mode';
 const ALERTS_KEY = 'flow-terminal-alerts-v1';
 const ALERT_HISTORY_KEY = 'flow-terminal-alert-history-v1';
@@ -75,7 +75,7 @@ export const LAYOUT_TAB_PROFILE_ID = 'builtin-profile';
 const MAX_ALERT_HISTORY = 40;
 const MAX_TOASTS = 5;
 
-/** Default = Scalp v8: chart + right Book|Tape dock + bottom strip dock. */
+/** Default = Scalp v9: chart + right Book|Tape dock + bottom strip dock. */
 const DEFAULT_WIDGETS: WidgetInstance[] = [
   { id: 'chart', type: 'chart' },
   {
@@ -554,7 +554,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     },
 
     addWidget: (type) => {
-      // Tab docks are layout primitives (Scalp presets); launcher adds standalone panels.
+      // Tab docks are layout primitives (Scalp/Profile presets); launcher adds standalone panels.
       if (type === 'tabDock') return;
       const id = `${type}_${Date.now().toString(36)}`;
       const widgets = [...get().widgets, { id, type }];
@@ -867,7 +867,7 @@ export const WIDGET_META: Record<
   stats: { title: 'Stats', description: 'Last, funding, OI, spread' },
   tabDock: {
     title: 'Tab Dock',
-    description: 'Tabbed panel group (layout primitive — used by Scalp)',
+    description: 'Tabbed panel group (layout primitive — used by Scalp/Profile)',
   },
 };
 

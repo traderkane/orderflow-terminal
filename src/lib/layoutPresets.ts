@@ -1,6 +1,6 @@
 import type { LayoutItem, LayoutTemplate, WidgetInstance } from '../types/market';
 
-/** Scalp v8: chart workspace + right Book|Tape dock + bottom Heatmap|CVD|Liqs|Stats dock. */
+/** Scalp v9: chart workspace + right Book|Tape dock + bottom Heatmap|CVD|Liqs|Stats dock. */
 const SCALP_WIDGETS: WidgetInstance[] = [
   { id: 'chart', type: 'chart' },
   {
@@ -24,20 +24,34 @@ const SCALP_LAYOUT: LayoutItem[] = [
   { i: 'bottomDock', x: 0, y: 22, w: 12, h: 6, minW: 4, minH: 4 },
 ];
 
+/** Profile v9: large chart + profile tools dock + right Book|Tape + bottom Heatmap|CVD. */
 const PROFILE_WIDGETS: WidgetInstance[] = [
   { id: 'chart', type: 'chart' },
-  { id: 'tpo', type: 'tpo' },
-  { id: 'volumeProfile', type: 'volumeProfile' },
-  { id: 'footprint', type: 'footprint' },
-  { id: 'stats', type: 'stats' },
+  {
+    id: 'profileDock',
+    type: 'tabDock',
+    tabs: ['tpo', 'volumeProfile', 'footprint'],
+    activeTab: 0,
+  },
+  {
+    id: 'rightDock',
+    type: 'tabDock',
+    tabs: ['orderbook', 'trades'],
+    activeTab: 0,
+  },
+  {
+    id: 'bottomDock',
+    type: 'tabDock',
+    tabs: ['heatmap', 'cvd'],
+    activeTab: 0,
+  },
 ];
 
 const PROFILE_LAYOUT: LayoutItem[] = [
-  { i: 'chart', x: 0, y: 0, w: 6, h: 18, minW: 4, minH: 7 },
-  { i: 'footprint', x: 6, y: 0, w: 3, h: 18, minW: 3, minH: 6 },
-  { i: 'volumeProfile', x: 9, y: 0, w: 3, h: 18, minW: 2, minH: 5 },
-  { i: 'tpo', x: 0, y: 18, w: 9, h: 10, minW: 4, minH: 5 },
-  { i: 'stats', x: 9, y: 18, w: 3, h: 10, minW: 2, minH: 2 },
+  { i: 'chart', x: 0, y: 0, w: 6, h: 22, minW: 5, minH: 8 },
+  { i: 'profileDock', x: 6, y: 0, w: 3, h: 22, minW: 2, minH: 6 },
+  { i: 'rightDock', x: 9, y: 0, w: 3, h: 22, minW: 2, minH: 6 },
+  { i: 'bottomDock', x: 0, y: 22, w: 12, h: 6, minW: 4, minH: 4 },
 ];
 
 export const BUILTIN_TEMPLATES: LayoutTemplate[] = [

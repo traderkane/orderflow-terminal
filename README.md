@@ -116,11 +116,11 @@ App rail **Alerts** opens a right slide-over to create / list / delete alerts (p
 ## Layout
 
 - Drag widgets from the header handle; resize from corners
-- Layout + widget set persist in `localStorage` (`flow-terminal-layout-v8` / `flow-terminal-widgets-v8`)
+- Layout + widget set persist in `localStorage` (`flow-terminal-layout-v9` / `flow-terminal-widgets-v9`)
 - **Watchlist strip** under the top bar: multi-symbol chips (**BTC/USD**, **ETH/USD**) with last + % change; click to switch the active symbol; optional **+** adds from the symbol list; remove via chip **×**. Persists as `flow-terminal-watchlist-v1`; last-seen quotes cache as `flow-terminal-last-quotes-v1` (live for the active symbol, stale/cached for inactive).
 - **Layout tabs** under the top bar: quick-switch **Scalp / Profile / Default** (+ user-saved templates); optional **+** saves current as a new tab
 - **Layouts** drawer (app rail): slide-over matching layout-tab language — save current grid, load Scalp/Profile/Default or user tabs
-- Built-in presets: **Scalp** (chart + right **Book | Tape** tab dock + bottom **Heatmap | CVD | Liqs | Stats** dock), **Profile** (chart + TPO + VPVR + footprint)
+- Built-in presets: **Scalp** (chart + right **Book | Tape** tab dock + bottom **Heatmap | CVD | Liqs | Stats** dock), **Profile** (chart + profile dock **TPO | VPVR | Footprint** + right **Book | Tape** + bottom **Heatmap | CVD**)
 - **Tab docks** share one chrome frame with browser/MMT-style tabs; standalone widgets remain available via the launcher
 - **Reset layout** restores the chart-dominant pro workspace
 - **+ Widget** launcher adds another panel instance
