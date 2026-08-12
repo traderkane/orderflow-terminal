@@ -441,6 +441,87 @@ export function stackedImbalanceKey(time: number, price: number): string {
   return `${time}|${price}`;
 }
 
+export interface NakedPocMark {
+  /** Origin bar time (seconds). */
+  time: number;
+  /** POC price level (max buy+sell volume on that bar). */
+  price: number;
+  /** Total volume at the POC level. */
+  volume: number;
+}
+
+/** Price level with max total volume (buy+sell) on a footprint bar. */
+export function footprintBarPoc(
+  bar: FootprintBar,
+): { price: number; volume: number } | null {
+  let bestPrice = 0;
+  let bestVol = -1;
+  for (const l of bar.levels) {
+    const vol = l.buyVolume + l.sellVolume;
+    if (vol > bestVol) {
+      bestVol = vol;
+      bestPrice = l.price;
+    }
+  }
+  if (!(bestVol > 0)) return null;
+  return { price: bestPrice, volume: bestVol };
+}
+
+/**
+ * MMT-style naked (unfinished auction) POCs: per-bar POC prices that
+ * subsequent candle ranges have not traded through. Marks clear when
+ * any later bar's [low, high] covers the level (simple mitigation).
+ */
+export function detectNakedPocs(
+  bars: FootprintBar[],
+  candles: { time: number; high: number; low: number }[],
+  opts?: { step?: number },
+): NakedPocMark[] {
+  if (!bars.length) return [];
+  const ordered = [...bars].sort((a, b) => a.time - b.time);
+  const laterCandles = [...candles].sort((a, b) => a.time - b.time);
+  const step = opts?.step && opts.step > 0 ? opts.step : 0;
+  const eps = step > 0 ? step * 0.01 : 1e-9;
+
+  const naked: NakedPocMark[] = [];
+  for (let i = 0; i < ordered.length; i++) {
+    const bar = ordered[i];
+    const poc = footprintBarPoc(bar);
+    if (!poc) continue;
+
+    let mitigated = false;
+    for (const c of laterCandles) {
+      if (c.time <= bar.time) continue;
+      if (poc.price >= c.low - eps && poc.price <= c.high + eps) {
+        mitigated = true;
+        break;
+      }
+    }
+    // Fallback when candle history is sparse: use later footprint level spans
+    if (!mitigated && !laterCandles.some((c) => c.time > bar.time)) {
+      for (let j = i + 1; j < ordered.length; j++) {
+        const later = ordered[j];
+        if (!later.levels.length) continue;
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const l of later.levels) {
+          lo = Math.min(lo, l.price);
+          hi = Math.max(hi, l.price);
+        }
+        if (poc.price >= lo - eps && poc.price <= hi + eps) {
+          mitigated = true;
+          break;
+        }
+      }
+    }
+
+    if (!mitigated) {
+      naked.push({ time: bar.time, price: poc.price, volume: poc.volume });
+    }
+  }
+  return naked;
+}
+
 export function formatFootprintVol(v: number): string {
   if (!(v > 0)) return '';
   if (v >= 10000) return `${(v / 1000).toFixed(0)}k`;

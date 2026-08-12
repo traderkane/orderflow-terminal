@@ -57,6 +57,7 @@ import {
 import {
   FOOTPRINT_IMBALANCE_RATIO,
   FOOTPRINT_STACK_MIN,
+  detectNakedPocs,
   detectStackedImbalances,
   footprintBarsForChart,
   footprintCellImbalance,
@@ -934,6 +935,50 @@ export function ChartWidget() {
         ctx.fillStyle = stroke;
         ctx.fill();
       }
+      ctx.restore();
+    }
+
+    // Naked (unfinished auction) POCs — diamond ticks until traded through
+    const naked = detectNakedPocs(bars, candles, { step: stepGuess });
+    for (const mark of naked) {
+      const xMid = timeScale.timeToCoordinate(mark.time as Time);
+      const y = series.priceToCoordinate(mark.price);
+      if (xMid == null || y == null || !Number.isFinite(xMid) || !Number.isFinite(y)) {
+        continue;
+      }
+      // Place diamond on the right edge of the footprint body
+      const cx = (xMid as number) + half + 3.5;
+      const cy = y as number;
+      const s = bodyW >= 22 ? 4.2 : bodyW >= 12 ? 3.4 : 2.8;
+      ctx.save();
+      // Soft glow
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - s - 1);
+      ctx.lineTo(cx + s + 1, cy);
+      ctx.lineTo(cx, cy + s + 1);
+      ctx.lineTo(cx - s - 1, cy);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(250, 204, 21, 0.22)';
+      ctx.fill();
+      // Diamond
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - s);
+      ctx.lineTo(cx + s, cy);
+      ctx.lineTo(cx, cy + s);
+      ctx.lineTo(cx - s, cy);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(250, 204, 21, 0.92)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(253, 224, 71, 0.95)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // Tiny tick toward the cluster
+      ctx.beginPath();
+      ctx.moveTo(cx - s - 1, cy);
+      ctx.lineTo((xMid as number) + half - 0.5, cy);
+      ctx.strokeStyle = 'rgba(250, 204, 21, 0.55)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
       ctx.restore();
     }
   };
@@ -1986,7 +2031,7 @@ export function ChartWidget() {
           </div>
           {chartMode === 'footprint' && (
             <div className="pointer-events-none hidden h-6 items-center rounded-[2px] border border-terminal-border/80 bg-black/45 px-1.5 font-mono text-[9px] uppercase tracking-wider text-zinc-500 backdrop-blur-[2px] sm:flex">
-              sell|buy · imb ≥{FOOTPRINT_IMBALANCE_RATIO}:1 · stack≥{FOOTPRINT_STACK_MIN}
+              sell|buy · imb ≥{FOOTPRINT_IMBALANCE_RATIO}:1 · stack≥{FOOTPRINT_STACK_MIN} · naked POC
             </div>
           )}
         </div>
