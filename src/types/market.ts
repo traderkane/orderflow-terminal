@@ -167,3 +167,55 @@ export interface LayoutItem {
   minW?: number;
   minH?: number;
 }
+
+/** Alert condition kinds. Price is primary; funding/OI optional. */
+export type AlertCondition =
+  | 'price_above'
+  | 'price_below'
+  | 'funding_above'
+  | 'funding_below'
+  | 'oi_above'
+  | 'oi_below';
+
+export interface PriceAlert {
+  id: string;
+  symbol: SymbolId;
+  condition: AlertCondition;
+  threshold: number;
+  enabled: boolean;
+  /** Latched after a fire until user re-arms */
+  triggered: boolean;
+  createdAt: number;
+  triggeredAt?: number;
+  note?: string;
+}
+
+export interface AlertFire {
+  id: string;
+  alertId: string;
+  symbol: SymbolId;
+  condition: AlertCondition;
+  threshold: number;
+  value: number;
+  firedAt: number;
+  message: string;
+}
+
+export interface LayoutTemplate {
+  id: string;
+  name: string;
+  builtIn?: boolean;
+  widgets: WidgetInstance[];
+  layout: LayoutItem[];
+  createdAt: number;
+}
+
+export type PanelId = 'alerts' | 'layouts' | null;
+
+export interface ToastItem {
+  id: string;
+  kind: 'alert' | 'info';
+  title: string;
+  body: string;
+  createdAt: number;
+}

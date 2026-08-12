@@ -3,18 +3,37 @@ import { mockFeed } from '../data/mockFeed';
 import { liveFeed } from '../data/liveFeed';
 import type { FeedMode, FeedSnapshot } from '../data/feedTypes';
 import type {
+  AlertFire,
+  AlertCondition,
   ExchangeId,
   FeedStatus,
   LayoutItem,
+  LayoutTemplate,
+  PanelId,
+  PriceAlert,
   Speed,
   SymbolId,
+  ToastItem,
   WidgetInstance,
   WidgetType,
 } from '../types/market';
+import {
+  alertMessage,
+  crossedThreshold,
+  notifyBrowser,
+  readMetric,
+} from '../lib/alerts';
+import { BUILTIN_TEMPLATES } from '../lib/layoutPresets';
 
 const LAYOUT_KEY = 'flow-terminal-layout-v5';
 const WIDGETS_KEY = 'flow-terminal-widgets-v5';
 const FEED_MODE_KEY = 'flow-terminal-feed-mode';
+const ALERTS_KEY = 'flow-terminal-alerts-v1';
+const ALERT_HISTORY_KEY = 'flow-terminal-alert-history-v1';
+const TEMPLATES_KEY = 'flow-terminal-templates-v1';
+
+const MAX_ALERT_HISTORY = 40;
+const MAX_TOASTS = 5;
 
 const DEFAULT_WIDGETS: WidgetInstance[] = [
   { id: 'chart', type: 'chart' },
@@ -60,6 +79,10 @@ function loadFeedMode(): FeedMode {
   return 'live';
 }
 
+function uid(prefix: string) {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
 interface TerminalState {
   symbol: SymbolId;
   exchanges: ExchangeId[];
@@ -77,6 +100,12 @@ interface TerminalState {
   showProfile: boolean;
   showBubbles: boolean;
   launcherOpen: boolean;
+  openPanel: PanelId;
+
+  alerts: PriceAlert[];
+  alertHistory: AlertFire[];
+  userTemplates: LayoutTemplate[];
+  toasts: ToastItem[];
 
   initFeed: () => () => void;
   setFeedMode: (mode: FeedMode) => void;
@@ -95,6 +124,27 @@ interface TerminalState {
   setShowProfile: (v: boolean) => void;
   setShowBubbles: (v: boolean) => void;
   setLauncherOpen: (v: boolean) => void;
+  setOpenPanel: (panel: PanelId) => void;
+
+  addAlert: (input: {
+    symbol: SymbolId;
+    condition: AlertCondition;
+    threshold: number;
+    note?: string;
+  }) => void;
+  deleteAlert: (id: string) => void;
+  toggleAlertEnabled: (id: string) => void;
+  rearmAlert: (id: string) => void;
+  clearAlertHistory: () => void;
+  evaluateAlerts: (snap: FeedSnapshot) => void;
+
+  saveTemplate: (name: string) => void;
+  loadTemplate: (id: string) => void;
+  deleteTemplate: (id: string) => void;
+  getAllTemplates: () => LayoutTemplate[];
+
+  pushToast: (toast: Omit<ToastItem, 'id' | 'createdAt'>) => void;
+  dismissToast: (id: string) => void;
 }
 
 function persist(widgets: WidgetInstance[], layout: LayoutItem[]) {
@@ -102,10 +152,25 @@ function persist(widgets: WidgetInstance[], layout: LayoutItem[]) {
   localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
 }
 
+function persistAlerts(alerts: PriceAlert[]) {
+  localStorage.setItem(ALERTS_KEY, JSON.stringify(alerts));
+}
+
+function persistHistory(history: AlertFire[]) {
+  localStorage.setItem(ALERT_HISTORY_KEY, JSON.stringify(history));
+}
+
+function persistTemplates(templates: LayoutTemplate[]) {
+  localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templates));
+}
+
 function stopAll() {
   mockFeed.stop();
   liveFeed.stop();
 }
+
+/** Prior metric samples for cross detection, keyed by alert id. */
+const prevMetrics = new Map<string, number>();
 
 export const useTerminalStore = create<TerminalState>((set, get) => {
   let unsubData: (() => void) | null = null;
@@ -122,6 +187,11 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     unsubVenueStatus = null;
   };
 
+  const onSnap = (snap: FeedSnapshot, extras?: Partial<TerminalState>) => {
+    set({ feed: snap, ...extras });
+    get().evaluateAlerts(snap);
+  };
+
   const attachMock = () => {
     cleanupSubs();
     stopAll();
@@ -129,7 +199,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     mockFeed.setExchanges(get().exchanges);
     mockFeed.setSpeed(get().speed);
     unsubData = mockFeed.subscribe((snap) => {
-      set({ feed: snap, status: mockFeed.getStatus(), feedMode: 'mock' });
+      onSnap(snap, { status: mockFeed.getStatus(), feedMode: 'mock' });
     });
     mockFeed.start();
     set({
@@ -156,7 +226,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     unsubStatus = liveFeed.onStatus((status) => set({ status }));
     unsubVenueStatus = liveFeed.onVenueStatus((venueStatus) => set({ venueStatus }));
     unsubData = liveFeed.subscribe((snap) => {
-      set({ feed: snap, status: liveFeed.getStatus() });
+      onSnap(snap, { status: liveFeed.getStatus() });
     });
     liveFeed.start();
     set({ feedMode: 'live', status: 'connecting' });
@@ -179,6 +249,12 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     showProfile: true,
     showBubbles: true,
     launcherOpen: false,
+    openPanel: null,
+
+    alerts: loadJson<PriceAlert[]>(ALERTS_KEY, []),
+    alertHistory: loadJson<AlertFire[]>(ALERT_HISTORY_KEY, []),
+    userTemplates: loadJson<LayoutTemplate[]>(TEMPLATES_KEY, []),
+    toasts: [],
 
     initFeed: () => {
       const mode = get().feedMode;
@@ -205,6 +281,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
 
     setSymbol: (symbol) => {
       set({ symbol });
+      prevMetrics.clear();
       if (get().feedMode === 'live') liveFeed.setSymbol(symbol);
       else mockFeed.setSymbol(symbol);
     },
@@ -276,7 +353,160 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
     setShowHeatmap: (showHeatmap) => set({ showHeatmap }),
     setShowProfile: (showProfile) => set({ showProfile }),
     setShowBubbles: (showBubbles) => set({ showBubbles }),
-    setLauncherOpen: (launcherOpen) => set({ launcherOpen }),
+    setLauncherOpen: (launcherOpen) => set({ launcherOpen, openPanel: launcherOpen ? null : get().openPanel }),
+    setOpenPanel: (openPanel) =>
+      set({ openPanel, launcherOpen: openPanel ? false : get().launcherOpen }),
+
+    addAlert: ({ symbol, condition, threshold, note }) => {
+      const alert: PriceAlert = {
+        id: uid('alert'),
+        symbol,
+        condition,
+        threshold,
+        enabled: true,
+        triggered: false,
+        createdAt: Date.now(),
+        note: note?.trim() || undefined,
+      };
+      const alerts = [alert, ...get().alerts];
+      set({ alerts });
+      persistAlerts(alerts);
+    },
+
+    deleteAlert: (id) => {
+      const alerts = get().alerts.filter((a) => a.id !== id);
+      prevMetrics.delete(id);
+      set({ alerts });
+      persistAlerts(alerts);
+    },
+
+    toggleAlertEnabled: (id) => {
+      const alerts = get().alerts.map((a) =>
+        a.id === id ? { ...a, enabled: !a.enabled } : a,
+      );
+      set({ alerts });
+      persistAlerts(alerts);
+    },
+
+    rearmAlert: (id) => {
+      const alerts = get().alerts.map((a) =>
+        a.id === id
+          ? { ...a, enabled: true, triggered: false, triggeredAt: undefined }
+          : a,
+      );
+      prevMetrics.delete(id);
+      set({ alerts });
+      persistAlerts(alerts);
+    },
+
+    clearAlertHistory: () => {
+      set({ alertHistory: [] });
+      persistHistory([]);
+    },
+
+    evaluateAlerts: (snap) => {
+      const stats = snap.stats;
+      if (!stats) return;
+      const active = get().alerts.filter(
+        (a) => a.enabled && !a.triggered && a.symbol === snap.symbol,
+      );
+      if (!active.length) return;
+
+      let alerts = get().alerts;
+      let history = get().alertHistory;
+      let fired = false;
+
+      for (const alert of active) {
+        const curr = readMetric(stats, alert.condition);
+        const prev = prevMetrics.has(alert.id) ? prevMetrics.get(alert.id)! : null;
+        prevMetrics.set(alert.id, curr);
+
+        if (!crossedThreshold(alert.condition, prev, curr, alert.threshold)) continue;
+
+        const now = Date.now();
+        const message = alertMessage(alert, curr);
+        const fire: AlertFire = {
+          id: uid('fire'),
+          alertId: alert.id,
+          symbol: alert.symbol,
+          condition: alert.condition,
+          threshold: alert.threshold,
+          value: curr,
+          firedAt: now,
+          message,
+        };
+
+        alerts = alerts.map((a) =>
+          a.id === alert.id ? { ...a, triggered: true, triggeredAt: now, enabled: false } : a,
+        );
+        history = [fire, ...history].slice(0, MAX_ALERT_HISTORY);
+        fired = true;
+
+        get().pushToast({
+          kind: 'alert',
+          title: 'Alert triggered',
+          body: message,
+        });
+        notifyBrowser('Flow Terminal', message);
+      }
+
+      if (fired) {
+        set({ alerts, alertHistory: history });
+        persistAlerts(alerts);
+        persistHistory(history);
+      }
+    },
+
+    saveTemplate: (name) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      const tpl: LayoutTemplate = {
+        id: uid('tpl'),
+        name: trimmed,
+        builtIn: false,
+        widgets: structuredClone(get().widgets),
+        layout: structuredClone(get().layout),
+        createdAt: Date.now(),
+      };
+      const userTemplates = [tpl, ...get().userTemplates];
+      set({ userTemplates });
+      persistTemplates(userTemplates);
+      get().pushToast({ kind: 'info', title: 'Layout saved', body: `"${trimmed}" stored locally` });
+    },
+
+    loadTemplate: (id) => {
+      const tpl =
+        BUILTIN_TEMPLATES.find((t) => t.id === id) ??
+        get().userTemplates.find((t) => t.id === id);
+      if (!tpl) return;
+      const widgets = structuredClone(tpl.widgets);
+      const layout = structuredClone(tpl.layout);
+      set({ widgets, layout });
+      persist(widgets, layout);
+      get().pushToast({ kind: 'info', title: 'Layout loaded', body: `"${tpl.name}" applied` });
+    },
+
+    deleteTemplate: (id) => {
+      if (id.startsWith('builtin-')) return;
+      const userTemplates = get().userTemplates.filter((t) => t.id !== id);
+      set({ userTemplates });
+      persistTemplates(userTemplates);
+    },
+
+    getAllTemplates: () => [...BUILTIN_TEMPLATES, ...get().userTemplates],
+
+    pushToast: (toast) => {
+      const item: ToastItem = {
+        ...toast,
+        id: uid('toast'),
+        createdAt: Date.now(),
+      };
+      set({ toasts: [item, ...get().toasts].slice(0, MAX_TOASTS) });
+    },
+
+    dismissToast: (id) => {
+      set({ toasts: get().toasts.filter((t) => t.id !== id) });
+    },
   };
 });
 

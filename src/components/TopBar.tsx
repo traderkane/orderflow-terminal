@@ -28,6 +28,11 @@ export function TopBar() {
   const toggleFeed = useTerminalStore((s) => s.toggleFeed);
   const resetLayout = useTerminalStore((s) => s.resetLayout);
   const setLauncherOpen = useTerminalStore((s) => s.setLauncherOpen);
+  const setOpenPanel = useTerminalStore((s) => s.setOpenPanel);
+  const openPanel = useTerminalStore((s) => s.openPanel);
+  const armedAlerts = useTerminalStore(
+    (s) => s.alerts.filter((a) => a.enabled && !a.triggered).length,
+  );
   const stats = useTerminalStore((s) => s.feed?.stats);
 
   const up = (stats?.change24h ?? 0) >= 0;
@@ -41,7 +46,6 @@ export function TopBar() {
         : status === "error"
           ? "bg-down"
           : "bg-amber-400";
-
 
   return (
     <header className="flex h-9 shrink-0 items-center gap-2 border-b border-terminal-border bg-[#07090d] px-2">
@@ -170,6 +174,37 @@ export function TopBar() {
             ))}
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={() => setOpenPanel(openPanel === "alerts" ? null : "alerts")}
+          className={`relative h-6 rounded-[2px] border px-2 text-[10px] font-medium uppercase tracking-wider ${
+            openPanel === "alerts"
+              ? "border-accent/40 bg-accent/10 text-accent"
+              : "border-terminal-border text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200"
+          }`}
+          title="Price / funding / OI alerts"
+        >
+          Alerts
+          {armedAlerts > 0 && (
+            <span className="ml-1 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-accent/20 px-1 font-mono text-[9px] text-accent">
+              {armedAlerts}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setOpenPanel(openPanel === "layouts" ? null : "layouts")}
+          className={`h-6 rounded-[2px] border px-2 text-[10px] font-medium uppercase tracking-wider ${
+            openPanel === "layouts"
+              ? "border-up/40 bg-up/10 text-up"
+              : "border-terminal-border text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200"
+          }`}
+          title="Layout templates"
+        >
+          Layouts
+        </button>
 
         <button
           type="button"

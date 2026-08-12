@@ -80,10 +80,21 @@ Resilience notes:
 - Speed **1x / 2x** (mock only)
 - Venue multi-select: Binance / Bybit / OKX (mock tags)
 
+## Alerts
+
+Top bar **Alerts** opens a drawer to create / list / delete alerts (persisted in `localStorage`).
+
+- Conditions: **price above / below** (primary), plus optional **funding** and **OI** crosses
+- Evaluated on each feed tick against live `stats.last` (and funding / OI)
+- On fire: toast banner + optional browser `Notification` (click **Notify** to permit)
+- Alert latches as triggered; **Rearm** to watch again; recent fires kept in history
+
 ## Layout
 
 - Drag widgets from the header handle; resize from corners
 - Layout + widget set persist in `localStorage`
+- **Layouts** drawer: save current grid as a named template, load / delete user templates
+- Built-in presets: **Scalp** (chart + DOM + tape), **Profile** (chart + TPO + VPVR + footprint)
 - **Reset layout** restores the chart-dominant pro workspace
 - **+ Widget** launcher adds another panel instance
 
