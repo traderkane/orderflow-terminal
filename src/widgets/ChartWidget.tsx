@@ -65,6 +65,16 @@ import {
   formatFootprintVol,
   stackedImbalanceKey,
 } from '../data/footprint';
+import {
+  HEATMAP_COLORMAPS,
+  heatmapCellColor,
+  loadHeatmapCraft,
+  patchHeatmapCraft,
+  peakPercentile,
+  rebinHeatLevels,
+  splatBlend,
+  type HeatmapCraftPrefs,
+} from '../lib/heatmapCraft';
 import { useTerminalStore } from '../store/useTerminalStore';
 import type {
   Candle,
@@ -167,6 +177,17 @@ export function ChartWidget() {
   const [vwapMenuOpen, setVwapMenuOpen] = useState(false);
   const [barStatsMenuOpen, setBarStatsMenuOpen] = useState(false);
   const [layersMenuOpen, setLayersMenuOpen] = useState(false);
+  const [heatmapMenuOpen, setHeatmapMenuOpen] = useState(false);
+  const [heatmapCraft, setHeatmapCraft] = useState<HeatmapCraftPrefs>(() =>
+    loadHeatmapCraft(),
+  );
+  const heatmapCraftRef = useRef<HeatmapCraftPrefs>(heatmapCraft);
+  heatmapCraftRef.current = heatmapCraft;
+
+  const updateHeatmapCraft = (partial: Partial<HeatmapCraftPrefs>) => {
+    const next = patchHeatmapCraft(partial);
+    setHeatmapCraft(next);
+  };
 
   const toolRef = useRef<DrawingTool>('select');
   const drawingsRef = useRef<ChartDrawing[]>([]);
@@ -302,6 +323,7 @@ export function ChartWidget() {
     const frames = heatmapRef.current;
     if (!frames.length) return;
 
+    const craft = heatmapCraftRef.current;
     const recent = frames.slice(-180);
     const timeScale = chart.timeScale();
     const plotW = Math.max(1, timeScale.width() || w);
@@ -310,39 +332,67 @@ export function ChartWidget() {
       timeScale.timeToCoordinate(Math.floor(frameTimeSec(f.time)) as Time),
     );
     const validXs = xMapped.filter((x): x is number => x != null && Number.isFinite(x));
-    let useStretch = validXs.length < 2;
+    // Extend-live: stretch trail to the right edge when mapped span is thin / empty.
+    // Off: prefer true time mapping only (no live right-edge crawl).
+    let useStretch = craft.extendLive && validXs.length < 2;
     let x0 = 0;
     let x1 = plotW;
-    if (!useStretch) {
+    if (validXs.length >= 2) {
       x0 = Math.min(...validXs);
       x1 = Math.max(...validXs);
-      // Heatmap frames are ~5 Hz — clock span collapses vs candle width.
-      // Stretch across most of the plot when the mapped band is thin.
-      if (x1 - x0 < plotW * 0.42) useStretch = true;
+      if (craft.extendLive && x1 - x0 < plotW * 0.42) useStretch = true;
+      else useStretch = false;
+    } else if (!craft.extendLive) {
+      useStretch = false;
     }
 
-    // Soft peak (p95) keeps walls bright without crushing mid liquidity.
+    // Soft peak from craft.peakIntensity (p70..p99) — walls bright without crush.
     const samples: number[] = [];
     for (const frame of recent) {
-      const n = frame.prices.length;
+      const rebinned = rebinHeatLevels(
+        frame.prices,
+        frame.bids,
+        frame.asks,
+        craft.binMode,
+      );
+      const n = rebinned.prices.length;
       for (let y = 0; y < n; y++) {
-        const v = Math.max(frame.bids[y] ?? 0, frame.asks[y] ?? 0);
+        const v = Math.max(rebinned.bids[y] ?? 0, rebinned.asks[y] ?? 0);
         if (v > 0.001) samples.push(v);
       }
     }
     samples.sort((a, b) => a - b);
+    const pct = peakPercentile(craft.peakIntensity);
     const peak =
       samples.length > 0
-        ? samples[Math.min(samples.length - 1, Math.floor(samples.length * 0.95))]
+        ? samples[Math.min(samples.length - 1, Math.floor(samples.length * pct))]
         : 1;
     const invPeak = peak > 0 ? 1 / peak : 1;
+    const lowGate = Math.max(0.004, craft.lowIntensity * 0.9);
+    const isSplat = craft.style === 'splat';
+    const gamma = isSplat ? 0.58 : 0.48;
+    const alphaScale = isSplat ? 0.42 : 0.52;
+    const alphaFloor = isSplat ? 0.05 : 0.07;
 
     const stretchLeft = Math.max(8, plotW * 0.12);
-    const stretchRight = plotW - 6;
+    const stretchRight = craft.extendLive ? plotW - 6 : Math.min(plotW - 6, (x1 || plotW) + 4);
     const stretchSpan = Math.max(1, stretchRight - stretchLeft);
+
+    if (isSplat) {
+      ctx.save();
+      // Soft bloom — stand-in for MMT splat without proprietary filters.
+      ctx.filter = 'blur(0.65px)';
+      ctx.globalCompositeOperation = 'lighter';
+    }
 
     for (let i = 0; i < recent.length; i++) {
       const frame = recent[i];
+      const rebinned = rebinHeatLevels(
+        frame.prices,
+        frame.bids,
+        frame.asks,
+        craft.binMode,
+      );
       let xLeft: number;
       let xRight: number;
 
@@ -370,37 +420,57 @@ export function ChartWidget() {
         xRight = x + rightGap;
       }
 
-      // Slight overlap smooths temporal seams without a single hard band.
-      const pad = Math.min(1.25, Math.max(0.35, (xRight - xLeft) * 0.15));
+      // Slight overlap smooths temporal seams; splat uses a wider pad.
+      const pad = Math.min(
+        isSplat ? 2.4 : 1.25,
+        Math.max(0.35, (xRight - xLeft) * (isSplat ? 0.28 : 0.15)),
+      );
       xLeft -= pad;
       xRight += pad;
 
       const cellW = Math.max(1, xRight - xLeft);
-      const levels = frame.prices.length;
+      const levels = rebinned.prices.length;
       if (levels < 2) continue;
 
-      // Precompute y coords once per frame for vertical interpolation.
       const yCoords: Array<number | null> = new Array(levels);
       for (let y = 0; y < levels; y++) {
-        const yc = series.priceToCoordinate(frame.prices[y]);
+        const yc = series.priceToCoordinate(rebinned.prices[y]);
         yCoords[y] = yc != null && Number.isFinite(yc) ? yc : null;
       }
 
       for (let y = 0; y < levels; y++) {
-        const bid = frame.bids[y] ?? 0;
-        const ask = frame.asks[y] ?? 0;
-        // Blend neighbors for smoother book walls (less single-row look).
-        const bidN =
-          bid * 0.55 +
-          (frame.bids[y - 1] ?? bid) * 0.225 +
-          (frame.bids[y + 1] ?? bid) * 0.225;
-        const askN =
-          ask * 0.55 +
-          (frame.asks[y - 1] ?? ask) * 0.225 +
-          (frame.asks[y + 1] ?? ask) * 0.225;
+        const bid = rebinned.bids[y] ?? 0;
+        const ask = rebinned.asks[y] ?? 0;
+        let bidN: number;
+        let askN: number;
+        if (isSplat) {
+          bidN = splatBlend(
+            bid,
+            rebinned.bids[y - 1] ?? bid,
+            rebinned.bids[y + 1] ?? bid,
+            rebinned.bids[y - 2] ?? bid,
+            rebinned.bids[y + 2] ?? bid,
+          );
+          askN = splatBlend(
+            ask,
+            rebinned.asks[y - 1] ?? ask,
+            rebinned.asks[y + 1] ?? ask,
+            rebinned.asks[y - 2] ?? ask,
+            rebinned.asks[y + 2] ?? ask,
+          );
+        } else {
+          bidN =
+            bid * 0.55 +
+            (rebinned.bids[y - 1] ?? bid) * 0.225 +
+            (rebinned.bids[y + 1] ?? bid) * 0.225;
+          askN =
+            ask * 0.55 +
+            (rebinned.asks[y - 1] ?? ask) * 0.225 +
+            (rebinned.asks[y + 1] ?? ask) * 0.225;
+        }
         const rawBid = Math.min(1.35, bidN * invPeak);
         const rawAsk = Math.min(1.35, askN * invPeak);
-        if (rawBid < 0.018 && rawAsk < 0.018) continue;
+        if (rawBid < lowGate && rawAsk < lowGate) continue;
 
         const yCoord = yCoords[y];
         if (yCoord == null) continue;
@@ -420,51 +490,46 @@ export function ChartWidget() {
           continue;
         }
 
-        const cellH = Math.max(1, yBot - yTop);
-        const bidI = Math.min(1, Math.pow(rawBid, 0.48));
-        const askI = Math.min(1, Math.pow(rawAsk, 0.48));
+        // Splat expands cells slightly for a blurrier wall.
+        if (isSplat) {
+          const inflate = Math.max(0.4, (yBot - yTop) * 0.2);
+          yTop -= inflate;
+          yBot += inflate;
+        }
 
-        // Paint both sides when present — dual-tone walls, not max-only bands.
-        if (bidI >= askI && bidI > 0.02) {
-          const alpha = 0.07 + bidI * 0.52;
-          ctx.fillStyle = `rgba(14, 203, 129, ${alpha})`;
+        const cellH = Math.max(1, yBot - yTop);
+        const bidI = Math.min(1, Math.pow(Math.max(0, rawBid), gamma));
+        const askI = Math.min(1, Math.pow(Math.max(0, rawAsk), gamma));
+        if (bidI < craft.lowIntensity && askI < craft.lowIntensity) continue;
+
+        const paint = (side: 'bid' | 'ask', intensity: number, aMul: number) => {
+          if (intensity < craft.lowIntensity) return;
+          const alpha = (alphaFloor + intensity * alphaScale) * aMul;
+          ctx.fillStyle = heatmapCellColor(
+            craft.colormap,
+            side,
+            intensity,
+            alpha,
+          );
           ctx.fillRect(
             Math.floor(xLeft),
             Math.floor(yTop),
             Math.ceil(cellW) + 1,
             Math.ceil(cellH) + 1,
           );
-          if (askI > 0.08) {
-            ctx.fillStyle = `rgba(246, 70, 93, ${0.04 + askI * 0.22})`;
-            ctx.fillRect(
-              Math.floor(xLeft),
-              Math.floor(yTop),
-              Math.ceil(cellW) + 1,
-              Math.ceil(cellH) + 1,
-            );
-          }
-        } else if (askI > 0.02) {
-          const alpha = 0.07 + askI * 0.52;
-          ctx.fillStyle = `rgba(246, 70, 93, ${alpha})`;
-          ctx.fillRect(
-            Math.floor(xLeft),
-            Math.floor(yTop),
-            Math.ceil(cellW) + 1,
-            Math.ceil(cellH) + 1,
-          );
-          if (bidI > 0.08) {
-            ctx.fillStyle = `rgba(14, 203, 129, ${0.04 + bidI * 0.22})`;
-            ctx.fillRect(
-              Math.floor(xLeft),
-              Math.floor(yTop),
-              Math.ceil(cellW) + 1,
-              Math.ceil(cellH) + 1,
-            );
-          }
+        };
+
+        if (bidI >= askI && bidI > craft.lowIntensity) {
+          paint('bid', bidI, 1);
+          if (askI > Math.max(0.06, craft.lowIntensity)) paint('ask', askI, 0.45);
+        } else if (askI > craft.lowIntensity) {
+          paint('ask', askI, 1);
+          if (bidI > Math.max(0.06, craft.lowIntensity)) paint('bid', bidI, 0.45);
         }
       }
     }
 
+    if (isSplat) ctx.restore();
   };
 
   const drawProfileLayer = (
@@ -1743,13 +1808,14 @@ export function ChartWidget() {
   ]);
 
   useEffect(() => {
-    if (!vwapMenuOpen && !barStatsMenuOpen && !layersMenuOpen) return;
+    if (!vwapMenuOpen && !barStatsMenuOpen && !layersMenuOpen && !heatmapMenuOpen) return;
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null;
       if (t?.closest('[data-layer-menus]')) return;
       setVwapMenuOpen(false);
       setBarStatsMenuOpen(false);
       setLayersMenuOpen(false);
+      setHeatmapMenuOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -1758,6 +1824,7 @@ export function ChartWidget() {
         setVwapMenuOpen(false);
         setBarStatsMenuOpen(false);
         setLayersMenuOpen(false);
+        setHeatmapMenuOpen(false);
       }
     };
     window.addEventListener('mousedown', onDown);
@@ -1766,7 +1833,7 @@ export function ChartWidget() {
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('keydown', onKey, true);
     };
-  }, [vwapMenuOpen, barStatsMenuOpen, layersMenuOpen]);
+  }, [vwapMenuOpen, barStatsMenuOpen, layersMenuOpen, heatmapMenuOpen]);
 
   useEffect(() => {
     scheduleOverlays();
@@ -1777,7 +1844,7 @@ export function ChartWidget() {
     else if (tool === 'eraser') setHoverCursor('pointer');
     else if (!dragRef.current) setHoverCursor('default');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showHeatmap, showProfile, showBubbles, selectedId, drawings, tool, chartMode]);
+  }, [showHeatmap, showProfile, showBubbles, selectedId, drawings, tool, chartMode, heatmapCraft]);
 
   useEffect(() => {
     const candles = candleRef.current;
@@ -2047,7 +2114,23 @@ export function ChartWidget() {
               label="Heatmap"
               short="HM"
               on={showHeatmap}
-              onClick={() => setShowHeatmap(!showHeatmap)}
+              onClick={() => {
+                const next = !showHeatmap;
+                setShowHeatmap(next);
+                if (!next) setHeatmapMenuOpen(false);
+              }}
+              onGear={
+                showHeatmap
+                  ? () => {
+                      setHeatmapMenuOpen((v) => !v);
+                      setVwapMenuOpen(false);
+                      setBarStatsMenuOpen(false);
+                      setLayersMenuOpen(false);
+                    }
+                  : undefined
+              }
+              gearTitle="Heatmap craft"
+              gearOpen={heatmapMenuOpen}
             />
             <LayerChip
               label="VWAP"
@@ -2060,6 +2143,7 @@ export function ChartWidget() {
                 if (next) {
                   setBarStatsMenuOpen(false);
                   setLayersMenuOpen(false);
+                  setHeatmapMenuOpen(false);
                 }
               }}
               onGear={
@@ -2068,6 +2152,7 @@ export function ChartWidget() {
                       setVwapMenuOpen((v) => !v);
                       setBarStatsMenuOpen(false);
                       setLayersMenuOpen(false);
+                      setHeatmapMenuOpen(false);
                     }
                   : undefined
               }
@@ -2087,6 +2172,7 @@ export function ChartWidget() {
                 setLayersMenuOpen((v) => !v);
                 setVwapMenuOpen(false);
                 setBarStatsMenuOpen(false);
+                setHeatmapMenuOpen(false);
               }}
               className={`inline-flex items-center gap-1 px-1.5 text-[9px] font-semibold uppercase tracking-wider ${
                 layersMenuOpen
@@ -2144,6 +2230,7 @@ export function ChartWidget() {
                     ? () => {
                         setBarStatsMenuOpen((v) => !v);
                         setVwapMenuOpen(false);
+                        setHeatmapMenuOpen(false);
                       }
                     : undefined
                 }
@@ -2199,6 +2286,166 @@ export function ChartWidget() {
 
               <div className="mt-1 border-t border-terminal-border/70 px-1.5 pt-1 font-mono text-[8px] leading-snug text-zinc-600">
                 Favorites on dock · Heatmap / VWAP / CVD
+              </div>
+            </div>
+          )}
+
+          {showHeatmap && heatmapMenuOpen && (
+            <div
+              data-heatmap-craft
+              className="pointer-events-auto absolute bottom-9 left-0 z-20 w-[220px] rounded-[2px] border border-terminal-border bg-black/92 p-1.5 shadow-panel backdrop-blur-[2px]"
+            >
+              <div className="flex items-center gap-1.5 px-1 pb-1 pt-0.5">
+                <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">
+                  Heatmap craft
+                </span>
+                <span className="ml-auto font-mono text-[8px] uppercase tracking-wider text-zinc-600">
+                  live
+                </span>
+              </div>
+
+              <label className="mb-1 block px-1">
+                <div className="mb-0.5 flex items-center justify-between font-mono text-[8px] uppercase tracking-[0.12em] text-zinc-600">
+                  <span>Low</span>
+                  <span className="text-zinc-400">{Math.round(heatmapCraft.lowIntensity * 100)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={40}
+                  step={1}
+                  value={Math.round(heatmapCraft.lowIntensity * 100)}
+                  onChange={(e) =>
+                    updateHeatmapCraft({ lowIntensity: Number(e.target.value) / 100 })
+                  }
+                  className="hm-craft-range w-full"
+                  title="Hide soft liquidity below this floor"
+                />
+              </label>
+
+              <label className="mb-1.5 block px-1">
+                <div className="mb-0.5 flex items-center justify-between font-mono text-[8px] uppercase tracking-[0.12em] text-zinc-600">
+                  <span>Peak</span>
+                  <span className="text-zinc-400">{Math.round(heatmapCraft.peakIntensity * 100)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={Math.round(heatmapCraft.peakIntensity * 100)}
+                  onChange={(e) =>
+                    updateHeatmapCraft({ peakIntensity: Number(e.target.value) / 100 })
+                  }
+                  className="hm-craft-range w-full"
+                  title="Soft-peak saturation — higher = only walls glow"
+                />
+              </label>
+
+              <div className="mb-1 px-1 font-mono text-[8px] uppercase tracking-[0.14em] text-zinc-600">
+                Bins
+              </div>
+              <div className="mb-1.5 flex gap-0.5 px-1">
+                {([
+                  ['hd', 'HD'],
+                  ['sd', 'SD'],
+                ] as const).map(([id, label]) => {
+                  const on = heatmapCraft.binMode === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      title={id === 'hd' ? 'Finer price bins' : 'Coarser aggregated bins'}
+                      onClick={() => updateHeatmapCraft({ binMode: id })}
+                      className={`flex-1 rounded-[2px] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider ${
+                        on
+                          ? 'bg-accent/20 text-accent ring-1 ring-inset ring-accent/40'
+                          : 'bg-white/[0.03] text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mb-1 px-1 font-mono text-[8px] uppercase tracking-[0.14em] text-zinc-600">
+                Style
+              </div>
+              <div className="mb-1.5 flex gap-0.5 px-1">
+                {([
+                  ['classic', 'Classic'],
+                  ['splat', 'Splat'],
+                ] as const).map(([id, label]) => {
+                  const on = heatmapCraft.style === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      title={id === 'classic' ? 'Crisp book walls' : 'Softer / blurrier walls'}
+                      onClick={() => updateHeatmapCraft({ style: id })}
+                      className={`flex-1 rounded-[2px] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider ${
+                        on
+                          ? 'bg-accent/20 text-accent ring-1 ring-inset ring-accent/40'
+                          : 'bg-white/[0.03] text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                title="Keep heatmap trail updating at the live right edge"
+                onClick={() => updateHeatmapCraft({ extendLive: !heatmapCraft.extendLive })}
+                className={`mb-1.5 flex w-full items-center gap-1.5 rounded-[2px] px-1.5 py-1 font-mono text-[10px] uppercase tracking-wider ${
+                  heatmapCraft.extendLive
+                    ? 'bg-accent/20 text-accent ring-1 ring-inset ring-accent/40'
+                    : 'bg-white/[0.03] text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                <span
+                  className={`flex h-3 w-3 shrink-0 items-center justify-center rounded-[2px] border ${
+                    heatmapCraft.extendLive
+                      ? 'border-accent/60 bg-accent/25 text-accent'
+                      : 'border-terminal-border bg-black/40 text-transparent'
+                  }`}
+                >
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden>
+                    <path d="M1.5 4.2L3.2 5.8L6.5 2.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+                Extend live
+              </button>
+
+              <div className="mb-1 px-1 font-mono text-[8px] uppercase tracking-[0.14em] text-zinc-600">
+                Colormap
+              </div>
+              <div className="mb-0.5 grid grid-cols-2 gap-0.5 px-1">
+                {HEATMAP_COLORMAPS.map((cm) => {
+                  const on = heatmapCraft.colormap === cm.id;
+                  return (
+                    <button
+                      key={cm.id}
+                      type="button"
+                      title={cm.hint}
+                      onClick={() => updateHeatmapCraft({ colormap: cm.id })}
+                      className={`rounded-[2px] px-1.5 py-0.5 text-left font-mono text-[9px] uppercase tracking-wider ${
+                        on
+                          ? 'bg-accent/20 text-accent ring-1 ring-inset ring-accent/40'
+                          : 'bg-white/[0.03] text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      {cm.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-1 border-t border-terminal-border/70 px-1 pt-1 font-mono text-[8px] leading-snug text-zinc-600">
+                Rolling book craft · not historical HD archive
               </div>
             </div>
           )}
@@ -2438,6 +2685,7 @@ function LayerChip({
   onClick,
   onGear,
   gearTitle,
+  gearOpen,
 }: {
   label: string;
   short: string;
@@ -2445,6 +2693,7 @@ function LayerChip({
   onClick: () => void;
   onGear?: () => void;
   gearTitle?: string;
+  gearOpen?: boolean;
 }) {
   return (
     <span className="inline-flex items-stretch">
@@ -2470,9 +2719,11 @@ function LayerChip({
             onGear();
           }}
           className={`border-l border-terminal-border/70 px-1 text-[9px] ${
-            on
-              ? 'bg-accent/10 text-accent/90 hover:text-accent'
-              : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
+            gearOpen
+              ? 'bg-accent/25 text-accent ring-1 ring-inset ring-accent/40'
+              : on
+                ? 'bg-accent/10 text-accent/90 hover:text-accent'
+                : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300'
           }`}
         >
           ▾

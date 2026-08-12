@@ -1,10 +1,33 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  HEATMAP_CRAFT_EVENT,
+  heatmapCellColor,
+  loadHeatmapCraft,
+  peakPercentile,
+  rebinHeatLevels,
+  splatBlend,
+  type HeatmapCraftPrefs,
+} from '../lib/heatmapCraft';
 import { useTerminalStore } from '../store/useTerminalStore';
 
 export function HeatmapWidget() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const heatmap = useTerminalStore((s) => s.feed?.heatmap) ?? [];
   const mid = useTerminalStore((s) => s.feed?.stats.mid) ?? 0;
+  const [craft, setCraft] = useState<HeatmapCraftPrefs>(() => loadHeatmapCraft());
+
+  useEffect(() => {
+    const sync = () => setCraft(loadHeatmapCraft());
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'flow-terminal-heatmap-craft-v1') sync();
+    };
+    window.addEventListener('storage', onStorage);
+    window.addEventListener(HEATMAP_CRAFT_EVENT, sync as EventListener);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener(HEATMAP_CRAFT_EVENT, sync as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -34,80 +57,133 @@ export function HeatmapWidget() {
     }
 
     const frames = heatmap.slice(-200);
-    const levels =
-      frames[frames.length - 1]?.prices.length || frames[0].prices.length;
-    // Slight overlap + ease so time axis reads as a trail, not stamps.
-    const cellW = w / Math.max(frames.length, 1);
-    const cellH = h / Math.max(levels, 1);
-
     const samples: number[] = [];
-    for (const frame of frames) {
-      for (let y = 0; y < levels; y++) {
+    const rebinnedFrames = frames.map((frame) =>
+      rebinHeatLevels(frame.prices, frame.bids, frame.asks, craft.binMode),
+    );
+    for (const frame of rebinnedFrames) {
+      for (let y = 0; y < frame.prices.length; y++) {
         const v = Math.max(frame.bids[y] ?? 0, frame.asks[y] ?? 0);
         if (v > 0.001) samples.push(v);
       }
     }
     samples.sort((a, b) => a - b);
+    const pct = peakPercentile(craft.peakIntensity);
     const peak =
       samples.length > 0
-        ? samples[Math.min(samples.length - 1, Math.floor(samples.length * 0.94))]
+        ? samples[Math.min(samples.length - 1, Math.floor(samples.length * pct))]
         : 1;
     const invPeak = peak > 0 ? 1 / peak : 1;
+    const levels = rebinnedFrames[rebinnedFrames.length - 1]?.prices.length || 1;
+    const cellW = w / Math.max(frames.length, 1);
+    const cellH = h / Math.max(levels, 1);
+    const isSplat = craft.style === 'splat';
+    const gamma = isSplat ? 0.58 : 0.46;
+    const alphaScale = isSplat ? 0.72 : 0.86;
+    const alphaFloor = isSplat ? 0.1 : 0.14;
 
-    for (let x = 0; x < frames.length; x++) {
-      const frame = frames[x];
-      const prev = x > 0 ? frames[x - 1] : frame;
-      const next = x + 1 < frames.length ? frames[x + 1] : frame;
-      // Ease recent columns a touch wider visually via overlap
-      const t = x / Math.max(1, frames.length - 1);
+    if (isSplat) {
+      ctx.save();
+      ctx.filter = 'blur(0.55px)';
+      ctx.globalCompositeOperation = 'lighter';
+    }
+
+    for (let x = 0; x < rebinnedFrames.length; x++) {
+      const frame = rebinnedFrames[x];
+      const prev = x > 0 ? rebinnedFrames[x - 1] : frame;
+      const next = x + 1 < rebinnedFrames.length ? rebinnedFrames[x + 1] : frame;
+      const t = x / Math.max(1, rebinnedFrames.length - 1);
       const ease = t * t * (3 - 2 * t);
-      const xLeft = x * cellW - cellW * 0.12;
-      const xRight = (x + 1) * cellW + cellW * (0.18 + ease * 0.08);
+      const extendPad = craft.extendLive ? 0.18 + ease * 0.08 : 0.08;
+      const xLeft = x * cellW - cellW * (isSplat ? 0.2 : 0.12);
+      const xRight = (x + 1) * cellW + cellW * extendPad;
       const drawW = Math.max(1, xRight - xLeft);
+      const n = frame.prices.length;
 
-      for (let y = 0; y < levels; y++) {
-        const bidRaw =
-          (frame.bids[y] ?? 0) * 0.5 +
-          (prev.bids[y] ?? frame.bids[y] ?? 0) * 0.2 +
-          (next.bids[y] ?? frame.bids[y] ?? 0) * 0.2 +
-          (frame.bids[y - 1] ?? frame.bids[y] ?? 0) * 0.05 +
-          (frame.bids[y + 1] ?? frame.bids[y] ?? 0) * 0.05;
-        const askRaw =
-          (frame.asks[y] ?? 0) * 0.5 +
-          (prev.asks[y] ?? frame.asks[y] ?? 0) * 0.2 +
-          (next.asks[y] ?? frame.asks[y] ?? 0) * 0.2 +
-          (frame.asks[y - 1] ?? frame.asks[y] ?? 0) * 0.05 +
-          (frame.asks[y + 1] ?? frame.asks[y] ?? 0) * 0.05;
+      for (let y = 0; y < n; y++) {
+        let bidRaw: number;
+        let askRaw: number;
+        if (isSplat) {
+          bidRaw = splatBlend(
+            frame.bids[y] ?? 0,
+            prev.bids[y] ?? frame.bids[y] ?? 0,
+            next.bids[y] ?? frame.bids[y] ?? 0,
+            frame.bids[y - 1] ?? frame.bids[y] ?? 0,
+            frame.bids[y + 1] ?? frame.bids[y] ?? 0,
+          );
+          askRaw = splatBlend(
+            frame.asks[y] ?? 0,
+            prev.asks[y] ?? frame.asks[y] ?? 0,
+            next.asks[y] ?? frame.asks[y] ?? 0,
+            frame.asks[y - 1] ?? frame.asks[y] ?? 0,
+            frame.asks[y + 1] ?? frame.asks[y] ?? 0,
+          );
+        } else {
+          bidRaw =
+            (frame.bids[y] ?? 0) * 0.5 +
+            (prev.bids[y] ?? frame.bids[y] ?? 0) * 0.2 +
+            (next.bids[y] ?? frame.bids[y] ?? 0) * 0.2 +
+            (frame.bids[y - 1] ?? frame.bids[y] ?? 0) * 0.05 +
+            (frame.bids[y + 1] ?? frame.bids[y] ?? 0) * 0.05;
+          askRaw =
+            (frame.asks[y] ?? 0) * 0.5 +
+            (prev.asks[y] ?? frame.asks[y] ?? 0) * 0.2 +
+            (next.asks[y] ?? frame.asks[y] ?? 0) * 0.2 +
+            (frame.asks[y - 1] ?? frame.asks[y] ?? 0) * 0.05 +
+            (frame.asks[y + 1] ?? frame.asks[y] ?? 0) * 0.05;
+        }
 
         const rawBid = Math.min(1.4, bidRaw * invPeak);
         const rawAsk = Math.min(1.4, askRaw * invPeak);
-        if (rawBid < 0.01 && rawAsk < 0.01) continue;
+        if (rawBid < craft.lowIntensity && rawAsk < craft.lowIntensity) continue;
 
-        const bidI = Math.min(1, Math.pow(Math.max(0, rawBid), 0.46));
-        const askI = Math.min(1, Math.pow(Math.max(0, rawAsk), 0.46));
+        const bidI = Math.min(1, Math.pow(Math.max(0, rawBid), gamma));
+        const askI = Math.min(1, Math.pow(Math.max(0, rawAsk), gamma));
         const py = h - (y + 1) * cellH;
-        const drawH = Math.ceil(cellH) + 1;
+        const drawH = Math.ceil(cellH) + (isSplat ? 2 : 1);
 
         if (bidI >= askI) {
-          ctx.fillStyle = `rgba(14, 203, 129, ${0.14 + bidI * 0.86})`;
+          ctx.fillStyle = heatmapCellColor(
+            craft.colormap,
+            'bid',
+            bidI,
+            alphaFloor + bidI * alphaScale,
+          );
           ctx.fillRect(Math.floor(xLeft), Math.floor(py), Math.ceil(drawW) + 1, drawH);
-          if (askI > 0.07) {
-            ctx.fillStyle = `rgba(246, 70, 93, ${0.06 + askI * 0.28})`;
+          if (askI > Math.max(0.07, craft.lowIntensity)) {
+            ctx.fillStyle = heatmapCellColor(
+              craft.colormap,
+              'ask',
+              askI,
+              0.06 + askI * 0.28,
+            );
             ctx.fillRect(Math.floor(xLeft), Math.floor(py), Math.ceil(drawW) + 1, drawH);
           }
         } else {
-          ctx.fillStyle = `rgba(246, 70, 93, ${0.14 + askI * 0.86})`;
+          ctx.fillStyle = heatmapCellColor(
+            craft.colormap,
+            'ask',
+            askI,
+            alphaFloor + askI * alphaScale,
+          );
           ctx.fillRect(Math.floor(xLeft), Math.floor(py), Math.ceil(drawW) + 1, drawH);
-          if (bidI > 0.07) {
-            ctx.fillStyle = `rgba(14, 203, 129, ${0.06 + bidI * 0.28})`;
+          if (bidI > Math.max(0.07, craft.lowIntensity)) {
+            ctx.fillStyle = heatmapCellColor(
+              craft.colormap,
+              'bid',
+              bidI,
+              0.06 + bidI * 0.28,
+            );
             ctx.fillRect(Math.floor(xLeft), Math.floor(py), Math.ceil(drawW) + 1, drawH);
           }
         }
       }
     }
 
+    if (isSplat) ctx.restore();
+
     if (mid && frames.length) {
-      const prices = frames[frames.length - 1].prices;
+      const prices = rebinnedFrames[rebinnedFrames.length - 1].prices;
       const lo = prices[0];
       const hi = prices[prices.length - 1];
       const t = (mid - lo) / (hi - lo || 1);
@@ -123,13 +199,13 @@ export function HeatmapWidget() {
       ctx.font = '10px IBM Plex Mono, monospace';
       ctx.fillText(mid.toFixed(2), 6, Math.max(12, y - 4));
     }
-  }, [heatmap, mid]);
+  }, [heatmap, mid, craft]);
 
   return (
     <div className="relative h-full w-full">
       <canvas ref={canvasRef} className="h-full w-full" />
       <div className="pointer-events-none absolute bottom-1.5 right-1.5 rounded-[2px] bg-black/55 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-zinc-500">
-        t → · px ↑ · bid / ask
+        {craft.binMode.toUpperCase()} · {craft.style} · {craft.colormap}
       </div>
     </div>
   );
